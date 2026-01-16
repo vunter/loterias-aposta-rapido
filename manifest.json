@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Aposta Rápido - Loterias Caixa",
+  "version": "1.2.0",
+  "description": "Preencha automaticamente seus jogos de loteria no portal da Caixa com números gerados pelo Loterias Analyzer",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "scripting",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://www.loteriasonline.caixa.gov.br/*",
+    "https://loteriasonline.caixa.gov.br/*",
+    "https://*.caixa.gov.br/*"
+  ],
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "src/options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.loteriasonline.caixa.gov.br/*",
+        "https://loteriasonline.caixa.gov.br/*"
+      ],
+      "js": ["src/content.js"],
+      "css": ["src/content.css"]
+    }
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  }
+}
