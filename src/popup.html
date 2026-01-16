@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aposta Rápido</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="header-row">
+        <h1>🎰 Aposta Rápido</h1>
+        <button id="openOptionsBtn" class="btn-icon" title="Configurações">⚙️</button>
+      </div>
+      <p class="subtitle">Preencha seus jogos automaticamente</p>
+    </header>
+
+    <main>
+      <section class="lottery-select">
+        <label for="lotteryType">Tipo de Loteria:</label>
+        <select id="lotteryType">
+          <option value="megasena">Mega-Sena</option>
+          <option value="lotofacil">Lotofácil</option>
+          <option value="quina">Quina</option>
+          <option value="lotomania">Lotomania</option>
+          <option value="timemania">Timemania</option>
+          <option value="duplasena">Dupla Sena</option>
+          <option value="diadesorte">Dia de Sorte</option>
+          <option value="supersete">Super Sete</option>
+          <option value="maismilionaria">+Milionária</option>
+        </select>
+      </section>
+
+      <section class="numbers-input">
+        <label for="numbersInput">Números (um jogo por linha ou separados por ;):</label>
+        <textarea 
+          id="numbersInput" 
+          placeholder="Ex: 01, 15, 23, 34, 45, 60&#10;02, 18, 25, 38, 42, 55&#10;ou: 01,15,23,34,45,60 ; 02,18,25,38,42,55"
+          rows="5"
+        ></textarea>
+        <small class="hint">Cole múltiplos jogos do Loterias Analyzer</small>
+      </section>
+
+      <section class="extra-options" id="extraOptions" style="display: none;">
+        <div id="timeCoracaoSection" style="display: none;">
+          <label for="timeCoracao">Time do Coração (fixo para todos os jogos):</label>
+          <input type="text" id="timeCoracao" placeholder="Ex: FLAMENGO">
+          <label class="checkbox-option">
+            <input type="checkbox" id="usarTimeFixo">
+            <span>Usar este time fixo (ignora sugestão da API)</span>
+          </label>
+        </div>
+        <div id="mesSorteSection" style="display: none;">
+          <label for="mesSorte">Mês da Sorte (fixo para todos os jogos):</label>
+          <select id="mesSorte">
+            <option value="">Selecione...</option>
+            <option value="Janeiro">Janeiro</option>
+            <option value="Fevereiro">Fevereiro</option>
+            <option value="Marco">Março</option>
+            <option value="Abril">Abril</option>
+            <option value="Maio">Maio</option>
+            <option value="Junho">Junho</option>
+            <option value="Julho">Julho</option>
+            <option value="Agosto">Agosto</option>
+            <option value="Setembro">Setembro</option>
+            <option value="Outubro">Outubro</option>
+            <option value="Novembro">Novembro</option>
+            <option value="Dezembro">Dezembro</option>
+          </select>
+          <label class="checkbox-option">
+            <input type="checkbox" id="usarMesFixo">
+            <span>Usar este mês fixo (ignora sugestão da API)</span>
+          </label>
+        </div>
+        <div id="trevosSection" style="display: none;">
+          <label for="trevos">Trevos (resultado ou manual):</label>
+          <input type="text" id="trevos" placeholder="Ex: 1, 4" disabled>
+          <div class="trevos-config">
+            <div class="trevos-qty">
+              <label for="quantidadeTrevos">Quantidade de trevos: <span id="quantidadeTrevosValue" class="number-value">2</span></label>
+              <input type="range" id="quantidadeTrevos" min="2" max="6" value="2">
+            </div>
+            <div class="trevos-fixos">
+              <label>Trevos fixos (sempre incluídos):</label>
+              <div class="trevo-buttons" id="trevoButtons">
+                <button type="button" class="trevo-btn" data-trevo="1">1</button>
+                <button type="button" class="trevo-btn" data-trevo="2">2</button>
+                <button type="button" class="trevo-btn" data-trevo="3">3</button>
+                <button type="button" class="trevo-btn" data-trevo="4">4</button>
+                <button type="button" class="trevo-btn" data-trevo="5">5</button>
+                <button type="button" class="trevo-btn" data-trevo="6">6</button>
+              </div>
+              <small class="hint">Clique para marcar trevos que sempre serão usados</small>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="games-list" id="gamesList" style="display: none;">
+        <h3>Jogos a preencher:</h3>
+        <ul id="gamesListItems"></ul>
+      </section>
+
+      <section class="actions">
+        <button id="parseBtn" class="btn btn-secondary">
+          📋 Processar Números
+        </button>
+        <button id="fillBtn" class="btn btn-primary" disabled>
+          ✨ Preencher no Site
+        </button>
+      </section>
+
+      <section class="collapsible-section" id="sectionJDD">
+        <div class="collapsible-header" data-target="sectionJDD">
+          <h3>🗓️ Jogos do Dia</h3>
+          <span class="collapse-icon">⌄</span>
+        </div>
+        <div class="collapsible-body">
+        <div class="jdd-day-controls">
+            <button id="selecionarHojeBtn" class="btn btn-small" title="Selecionar loterias com sorteio hoje">
+              📅
+            </button>
+            <select id="jddDiaSemana" class="jdd-dia-select" title="Selecionar dia da semana">
+              <option value="1">Segunda-feira</option>
+              <option value="2">Terça-feira</option>
+              <option value="3">Quarta-feira</option>
+              <option value="4">Quinta-feira</option>
+              <option value="5">Sexta-feira</option>
+              <option value="6">Sábado</option>
+            </select>
+          </div>
+        <p class="hint">Gere jogos para múltiplas loterias e aposte automaticamente</p>
+        <div class="lottery-checkboxes">
+          <label class="lottery-checkbox">
+            <input type="checkbox" id="jdd_megasena" value="megasena">
+            <span>Mega-Sena</span>
+          </label>
+          <label class="lottery-checkbox">
+            <input type="checkbox" id="jdd_lotofacil" value="lotofacil">
+            <span>Lotofácil</span>
+          </label>
+          <label class="lottery-checkbox">
+            <input type="checkbox" id="jdd_quina" value="quina">
+            <span>Quina</span>
+          </label>
+          <label class="lottery-checkbox">
+            <input type="checkbox" id="jdd_lotomania" value="lotomania">
+            <span>Lotomania</span>
+          </label>
+          <label class="lottery-checkbox">
+            <input type="checkbox" id="jdd_timemania" value="timemania">
+            <span>Timemania</span>
+          </label>
+          <label class="lottery-checkbox">
+            <input type="checkbox" id="jdd_duplasena" value="duplasena">
+            <span>Dupla Sena</span>
+          </label>
+          <label class="lottery-checkbox">
+            <input type="checkbox" id="jdd_diadesorte" value="diadesorte">
+            <span>Dia de Sorte</span>
+          </label>
+          <label class="lottery-checkbox">
+            <input type="checkbox" id="jdd_supersete" value="supersete">
+            <span>Super Sete</span>
+          </label>
+          <label class="lottery-checkbox">
+            <input type="checkbox" id="jdd_maismilionaria" value="maismilionaria">
+            <span>+Milionária</span>
+          </label>
+        </div>
+        <div class="jdd-options">
+          <div class="option-row">
+            <label for="jddQuantidade">Jogos por loteria:</label>
+            <input type="number" id="jddQuantidade" min="1" max="10" value="1">
+          </div>
+          <div class="option-row">
+            <label for="jddEstrategia">Estratégia:</label>
+            <select id="jddEstrategia">
+              <option value="NUMEROS_PREMIADOS" selected>🏆 Premiados</option>
+              <option value="NUMEROS_QUENTES">🔥 Quentes</option>
+              <option value="NUMEROS_FRIOS">❄️ Frios</option>
+              <option value="NUMEROS_ATRASADOS">⏰ Atrasados</option>
+              <option value="EQUILIBRADO">⚖️ Equilibrado</option>
+              <option value="COMBINADO">🎯 Combinado</option>
+              <option value="PARES_FREQUENTES">🔗 Pares Freq.</option>
+              <option value="DISTRIBUICAO_FAIXAS">📊 Faixas</option>
+              <option value="TENDENCIA_RECENTE">📈 Recente</option>
+              <option value="ALEATORIO">🎲 Aleatório</option>
+            </select>
+          </div>
+          <div class="option-row">
+            <label class="checkbox-label">
+              <input type="checkbox" id="jddPerLotteryStrategy">
+              Estratégia por loteria
+            </label>
+          </div>
+        </div>
+        <div class="jdd-per-lottery-strategies" id="jddPerLotteryStrategies" style="display: none;">
+        </div>
+        <button id="jogosDoDiaBtn" class="btn btn-primary">
+          🚀 Gerar e Apostar
+        </button>
+        </div>
+      </section>
+
+      <section class="progress-section" id="progressSection" style="display: none;">
+        <div class="progress-header">
+          <span id="progressLabel">Preenchendo...</span>
+          <span id="progressCount" class="progress-count">0/0</span>
+        </div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+        <div class="progress-details" id="progressDetails"></div>
+      </section>
+
+      <section class="confirm-section" id="confirmSection" style="display: none;">
+        <div class="confirm-header">⚠️ Confirmar Preenchimento</div>
+        <div class="confirm-body" id="confirmBody"></div>
+        <div class="confirm-actions">
+          <button id="confirmYes" class="btn btn-primary btn-confirm">✅ Preencher</button>
+          <button id="confirmNo" class="btn btn-secondary btn-confirm">❌ Cancelar</button>
+        </div>
+      </section>
+
+      <section class="status" id="statusSection" style="display: none;">
+        <div id="statusMessage"></div>
+      </section>
+
+      <section class="collapsible-section collapsed" id="sectionGerarJogos">
+        <div class="collapsible-header" data-target="sectionGerarJogos">
+          <h3>🎲 Gerar Jogos do Loterias Analyzer</h3>
+          <span class="collapse-icon">›</span>
+        </div>
+        <div class="collapsible-body" style="display: none;">
+        <div class="api-config">
+          <label for="apiUrl">URL da API:</label>
+          <div class="api-url-row">
+            <input type="text" id="apiUrl" placeholder="http://localhost:8080" value="http://localhost:8080" readonly>
+            <button id="editApiUrlBtn" class="btn-icon" title="Editar nas configurações">⚙️</button>
+          </div>
+        </div>
+        <div class="generate-options">
+          <div class="option-row">
+            <label for="quantidadeJogos">Quantidade:</label>
+            <input type="number" id="quantidadeJogos" min="1" max="20" value="1">
+          </div>
+          <div class="option-row">
+            <label for="estrategia">Estratégia:</label>
+            <select id="estrategia">
+              <option value="NUMEROS_PREMIADOS" selected>🏆 Números Premiados</option>
+              <option value="NUMEROS_QUENTES">🔥 Números Quentes</option>
+              <option value="NUMEROS_FRIOS">❄️ Números Frios</option>
+              <option value="NUMEROS_ATRASADOS">⏰ Números Atrasados</option>
+              <option value="EQUILIBRADO">⚖️ Equilibrado</option>
+              <option value="COMBINADO">🎯 Combinado</option>
+              <option value="PARES_FREQUENTES">🔗 Pares Frequentes</option>
+              <option value="DISTRIBUICAO_FAIXAS">📊 Distribuição por Faixas</option>
+              <option value="TENDENCIA_RECENTE">📈 Tendência Recente</option>
+              <option value="ALEATORIO">🎲 Aleatório</option>
+            </select>
+          </div>
+        </div>
+        <div class="numbers-per-game" id="quantidadeNumerosRow">
+          <label for="quantidadeNumeros">Números por jogo: <span id="quantidadeNumerosValue" class="number-value">6</span></label>
+          <input type="range" id="quantidadeNumeros" min="6" max="15" value="6">
+          <div class="range-limits">
+            <span id="rangeMin">6</span>
+            <span id="rangeMax">15</span>
+          </div>
+        </div>
+        <button id="fetchGamesBtn" class="btn btn-outline">
+          🎲 Gerar Jogos
+        </button>
+        </div>
+      </section>
+
+      <section class="collapsible-section collapsed" id="sectionTemplates">
+        <div class="collapsible-header" data-target="sectionTemplates">
+          <h3>📑 Templates Salvos</h3>
+          <span class="collapse-icon">›</span>
+        </div>
+        <div class="collapsible-body" style="display: none;">
+        <p class="hint">Salve configurações favoritas para reutilizar</p>
+        <div class="template-actions">
+          <input type="text" id="templateName" placeholder="Nome do template" class="template-name-input">
+          <button id="saveTemplateBtn" class="btn btn-small btn-outline">💾 Salvar</button>
+        </div>
+        <div id="templatesList" class="templates-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Loterias Analyzer © 2025</p>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
