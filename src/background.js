@@ -1,0 +1,578 @@
+// Background Service Worker
+
+console.log('[Aposta Rápido] Background service worker iniciado');
+
+// URLs base
+const LOTTERY_BASE_URL = 'https://www.loteriasonline.caixa.gov.br/silce-web/#/';
+const LOTTERY_URLS = {
+  megasena: 'mega-sena',
+  lotofacil: 'lotofacil',
+  quina: 'quina',
+  lotomania: 'lotomania',
+  timemania: 'timemania',
+  duplasena: 'dupla-sena',
+  diadesorte: 'dia-de-sorte',
+  supersete: 'super-sete',
+  maismilionaria: 'mais-milionaria'
+};
+
+// Listener para instalação da extensão
+chrome.runtime.onInstalled.addListener((details) => {
+  console.log('[Aposta Rápido] Extensão instalada:', details.reason);
+  
+  if (details.reason === 'install') {
+    chrome.storage.local.set({
+      apiUrl: 'http://localhost:8080',
+      lottery: 'megasena'
+    });
+  }
+});
+
+// Listener para mensagens
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('[Aposta Rápido] Mensagem no background:', request);
+  
+  if (request.action === 'openLotteryPortal') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tabId = tabs[0]?.id;
+      if (tabId) {
+        chrome.tabs.update(tabId, { url: 'https://www.loteriasonline.caixa.gov.br' });
+      } else {
+        chrome.tabs.create({ url: 'https://www.loteriasonline.caixa.gov.br' });
+      }
+    });
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  if (request.action === 'getActiveTab') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      sendResponse({ tab: tabs[0] });
+    });
+    return true;
+  }
+  
+  if (request.action === 'processarProximaLoteria') {
+    processarProximaLoteria();
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  if (request.action === 'preenchimentoConcluido') {
+    console.log('[Aposta Rápido] Preenchimento concluído para:', request.lottery);
+    setTimeout(() => processarProximaLoteria(), 2000);
+    sendResponse({ success: true });
+    return true;
+  }
+});
+
+// Processa a próxima loteria da fila
+async function processarProximaLoteria() {
+  try {
+    const result = await chrome.storage.local.get(['jogosDoDiaFila', 'jogosDoDia']);
+    let fila = result.jogosDoDiaFila || [];
+    const jogosPorLoteria = result.jogosDoDia || {};
+    
+    console.log('[Aposta Rápido] Fila atual:', fila);
+    console.log('[Aposta Rápido] Loterias disponíveis:', Object.keys(jogosPorLoteria));
+    
+    if (fila.length === 0) {
+      console.log('[Aposta Rápido] Fila vazia - todas as loterias processadas!');
+      // Limpar dados
+      await chrome.storage.local.remove(['jogosDoDiaFila', 'jogosDoDia']);
+      return;
+    }
+    
+    // Pegar e remover primeira loteria da fila
+    const lottery = fila[0];
+    fila = fila.slice(1); // Nova fila sem o primeiro elemento
+    
+    const jogosData = jogosPorLoteria[lottery];
+    
+    console.log('[Aposta Rápido] Processando:', lottery, 'Restantes:', fila.length);
+    
+    if (!jogosData) {
+      console.log('[Aposta Rápido] Sem dados para loteria:', lottery);
+      await chrome.storage.local.set({ jogosDoDiaFila: fila });
+      // Continuar para próxima
+      setTimeout(() => processarProximaLoteria(), 500);
+      return;
+    }
+    
+    // Salvar fila atualizada ANTES de processar
+    await chrome.storage.local.set({ jogosDoDiaFila: fila });
+    
+    const lotteryUrl = LOTTERY_BASE_URL + (LOTTERY_URLS[lottery] || lottery);
+    console.log('[Aposta Rápido] Navegando para:', lottery, lotteryUrl);
+    
+    // Reuse active tab instead of opening a new one
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = activeTab || (await chrome.tabs.query({ currentWindow: true }))[0];
+    await chrome.tabs.update(tab.id, { url: lotteryUrl });
+    
+    await waitForTabLoad(tab.id);
+    console.log('[Aposta Rápido] Página carregou, aguardando volante...');
+    
+    // Wait for the lottery number grid to render instead of fixed delay
+    await waitForElement(tab.id, 'ul.escolhe-numero a[id^="n"]');
+    
+    await executeFillForTab(tab.id, lottery, jogosData, fila.length);
+    
+  } catch (error) {
+    console.error('[Aposta Rápido] Erro ao processar loteria:', error);
+    setTimeout(() => processarProximaLoteria(), 1000);
+  }
+}
+
+function waitForTabLoad(tabId) {
+  return new Promise((resolve) => {
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, 30000);
+  });
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Polls the page until a CSS selector matches at least one element.
+ * Resolves true when found, false on timeout (default 15s).
+ */
+function waitForElement(tabId, selector, timeoutMs = 15000) {
+  const start = Date.now();
+  return new Promise(resolve => {
+    async function poll() {
+      if (Date.now() - start > timeoutMs) { resolve(false); return; }
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: (sel) => document.querySelectorAll(sel).length,
+          args: [selector]
+        });
+        if (result > 0) { resolve(true); return; }
+      } catch (_) { /* page may not be ready yet */ }
+      setTimeout(poll, 300);
+    }
+    poll();
+  });
+}
+
+async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
+  const jogos = jogosData?.jogos || [];
+  const quantidadeDezenas = jogosData?.quantidadeDezenas || 0;
+  const timeSugerido = jogosData?.timeSugerido || '';
+  const mesSugerido = jogosData?.mesSugerido || '';
+  
+  console.log('[Aposta Rápido] Iniciando preenchimento:', lottery, 'jogos:', jogos?.length);
+  
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: (gamesToFill, lotteryType, timeSugerido, mesSugerido, qtdDezenas) => {
+        console.log('[Aposta Rápido] === INICIANDO PREENCHIMENTO ===');
+        console.log('[Aposta Rápido] Loteria:', lotteryType);
+        console.log('[Aposta Rápido] Jogos:', JSON.stringify(gamesToFill));
+        
+        function applyAngular() {
+          try {
+            if (typeof angular !== 'undefined') {
+              const rootScope = angular.element(document.body).injector()?.get('$rootScope');
+              if (rootScope && !rootScope.$$phase) rootScope.$apply();
+            }
+          } catch (e) {}
+        }
+        
+        function sleep(ms) {
+          return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
+        async function limparSelecao() {
+          try {
+            const selectedElements = document.querySelectorAll('ul.escolhe-numero a.selected');
+            for (const el of selectedElements) {
+              if (typeof angular !== 'undefined') {
+                const scope = angular.element(el).scope();
+                if (scope?.numero && scope?.vm?.selecionar) {
+                  scope.vm.selecionar(scope.numero);
+                }
+              }
+            }
+            applyAngular();
+            await sleep(100);
+          } catch (e) {
+            console.log('[Aposta Rápido] Erro ao limpar seleção:', e);
+          }
+        }
+        
+        async function limparTrevos() {
+          try {
+            const anyTrevo = document.getElementById('trevo1');
+            if (anyTrevo && typeof angular !== 'undefined') {
+              const scope = angular.element(anyTrevo).scope();
+              if (scope?.vm?.limparTrevo) {
+                scope.vm.limparTrevo();
+                applyAngular();
+                await sleep(100);
+                return;
+              }
+            }
+            // Fallback: deselect individually
+            for (let t = 1; t <= 6; t++) {
+              const el = document.getElementById('trevo' + t);
+              if (el && typeof angular !== 'undefined') {
+                const scope = angular.element(el).scope();
+                if (scope?.numero?.selecionado && scope?.vm?.selecionarMaisMilionariaTrevo) {
+                  scope.vm.selecionarMaisMilionariaTrevo(scope.numero);
+                }
+              }
+            }
+            applyAngular();
+            await sleep(100);
+          } catch (e) {}
+        }
+        
+        async function resetarQuantidadeTrevos() {
+          try {
+            const btns = document.querySelectorAll('a[ng-click*="modificarQtdNumerosApostaMaisMilionariaTrevo"]');
+            for (const btn of btns) {
+              if (btn.textContent.trim() === '-' && typeof angular !== 'undefined') {
+                const scope = angular.element(btn).scope();
+                if (scope?.vm?.modificarQtdNumerosApostaMaisMilionariaTrevo) {
+                  for (let i = 0; i < 6; i++) {
+                    try { scope.vm.modificarQtdNumerosApostaMaisMilionariaTrevo(false); } catch (e) { break; }
+                  }
+                  applyAngular();
+                  await sleep(100);
+                  return;
+                }
+              }
+            }
+          } catch (e) {}
+        }
+        
+        async function preencherTrevos(trevos) {
+          if (!trevos || trevos.length === 0) return;
+          
+          // Adjust trevo count if > 2
+          if (trevos.length > 2) {
+            const btns = document.querySelectorAll('a[ng-click*="modificarQtdNumerosApostaMaisMilionariaTrevo"]');
+            for (const btn of btns) {
+              if (btn.textContent.trim() === '+' && typeof angular !== 'undefined') {
+                const scope = angular.element(btn).scope();
+                if (scope?.vm?.modificarQtdNumerosApostaMaisMilionariaTrevo) {
+                  for (let i = 0; i < trevos.length - 2; i++) {
+                    scope.vm.modificarQtdNumerosApostaMaisMilionariaTrevo(true);
+                    await sleep(50);
+                  }
+                  applyAngular();
+                  await sleep(100);
+                  break;
+                }
+              }
+            }
+          }
+          
+          // Select trevos
+          for (const trevo of trevos) {
+            const element = document.getElementById('trevo' + trevo);
+            if (element && typeof angular !== 'undefined') {
+              try {
+                const scope = angular.element(element).scope();
+                if (scope?.numero && scope?.vm?.selecionarMaisMilionariaTrevo) {
+                  scope.vm.selecionarMaisMilionariaTrevo(scope.numero);
+                  await sleep(50);
+                  continue;
+                }
+              } catch (e) {}
+            }
+            if (element) element.click();
+            await sleep(50);
+          }
+          applyAngular();
+        }
+        
+        async function resetarQuantidade() {
+          try {
+            const diminuirBtn = document.getElementById('diminuirnumero');
+            if (diminuirBtn && typeof angular !== 'undefined') {
+              const scope = angular.element(diminuirBtn).scope();
+              if (scope?.vm?.modificarQtdNumerosAposta) {
+                for (let i = 0; i < 20; i++) {
+                  try { scope.vm.modificarQtdNumerosAposta(false); } catch (e) { break; }
+                }
+                applyAngular();
+                await sleep(100);
+              }
+            }
+          } catch (e) {}
+        }
+        
+        async function preencherJogo(numbers, gameIndex) {
+          console.log(`[Aposta Rápido] Preenchendo jogo ${gameIndex + 1}:`, numbers);
+          
+          let filled = 0;
+          
+          if (lotteryType === 'supersete') {
+            // Super Sete: column-based IDs n{column}{digit}
+            for (let colIdx = 0; colIdx < numbers.length && colIdx < 7; colIdx++) {
+              const column = colIdx + 1;
+              const digit = numbers[colIdx];
+              const elementId = `n${column}${digit}`;
+              const element = document.getElementById(elementId);
+              
+              if (element && typeof angular !== 'undefined') {
+                try {
+                  const scope = angular.element(element).scope();
+                  if (scope?.numero && scope?.vm?.selecionar) {
+                    scope.vm.selecionar(scope.numero);
+                    filled++;
+                    await sleep(30);
+                    continue;
+                  }
+                } catch (e) {}
+              }
+              if (element) {
+                element.click();
+                filled++;
+              }
+              await sleep(30);
+            }
+          } else if (lotteryType === 'maismilionaria') {
+            // +Milionária: split flat array into dezenas + trevos using qtdDezenas
+            const splitAt = qtdDezenas > 0 ? qtdDezenas : 6;
+            const dezenas = numbers.slice(0, splitAt);
+            const trevos = numbers.slice(splitAt);
+            
+            // Fill dezenas
+            for (const num of dezenas) {
+              let element = document.getElementById('n' + String(num).padStart(2, '0'));
+              if (!element) element = document.getElementById('n' + num);
+              
+              if (element && typeof angular !== 'undefined') {
+                try {
+                  const scope = angular.element(element).scope();
+                  if (scope?.numero && scope?.vm?.selecionar) {
+                    scope.vm.selecionar(scope.numero);
+                    filled++;
+                    await sleep(30);
+                    continue;
+                  }
+                } catch (e) {}
+              }
+              if (element) {
+                element.click();
+                filled++;
+              }
+              await sleep(30);
+            }
+            
+            applyAngular();
+            await sleep(100);
+            
+            // Fill trevos
+            if (trevos.length > 0) {
+              await preencherTrevos(trevos);
+            }
+          } else {
+            // Standard filling for all other lotteries
+            for (const num of numbers) {
+              const paddedNum = String(num).padStart(2, '0');
+              let element = document.getElementById('n' + paddedNum);
+              if (!element) element = document.getElementById('n' + num);
+              
+              if (element && typeof angular !== 'undefined') {
+                try {
+                  const scope = angular.element(element).scope();
+                  if (scope?.numero && scope?.vm?.selecionar) {
+                    scope.vm.selecionar(scope.numero);
+                    filled++;
+                    await sleep(30);
+                    continue;
+                  }
+                } catch (e) {}
+              }
+              if (element) {
+                element.click();
+                filled++;
+              }
+              await sleep(30);
+            }
+          }
+          
+          applyAngular();
+          await sleep(200);
+          
+          return filled;
+        }
+        
+        async function adicionarAoCarrinho() {
+          const carrinhoBtn = document.getElementById('colocarnocarrinho');
+          if (carrinhoBtn && typeof angular !== 'undefined') {
+            try {
+              const scope = angular.element(carrinhoBtn).scope();
+              if (scope?.vm?.incluirAposta) {
+                scope.vm.incluirAposta();
+                applyAngular();
+                await sleep(500);
+                return true;
+              }
+            } catch (e) {}
+            carrinhoBtn.click();
+            await sleep(500);
+            return true;
+          }
+          return false;
+        }
+        
+        async function selecionarTime(timeNome) {
+          if (!timeNome) return false;
+          const timeNomeNorm = timeNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+          
+          try {
+            const timesLi = document.querySelectorAll('li[ng-repeat*="equipe in listaEquipe"]');
+            for (const li of timesLi) {
+              if (typeof angular !== 'undefined') {
+                const scope = angular.element(li).scope();
+                if (scope?.equipe) {
+                  const equipeNome = (scope.equipe.nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                  if (equipeNome.includes(timeNomeNorm) || timeNomeNorm.includes(equipeNome)) {
+                    if (typeof scope.configurarTime === 'function') {
+                      scope.configurarTime(scope.equipe);
+                      applyAngular();
+                      await sleep(100);
+                      return true;
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) {}
+          return false;
+        }
+        
+        async function selecionarMes(mesNome) {
+          if (!mesNome) return false;
+          const mesNomeNorm = mesNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+          
+          try {
+            const mesesLi = document.querySelectorAll('li[ng-repeat*="mes in listaMeses"]');
+            for (const li of mesesLi) {
+              if (typeof angular !== 'undefined') {
+                const scope = angular.element(li).scope();
+                if (scope?.mes) {
+                  const nomeMes = (scope.mes.nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                  if (nomeMes === mesNomeNorm || nomeMes.startsWith(mesNomeNorm.slice(0, 3))) {
+                    if (typeof scope.configurarMes === 'function') {
+                      scope.configurarMes(scope.mes);
+                      applyAngular();
+                      await sleep(100);
+                      return true;
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) {}
+          return false;
+        }
+        
+        async function execute() {
+          const elements = document.querySelectorAll('ul.escolhe-numero a[id^="n"]');
+          if (elements.length === 0) {
+            return { success: false, message: 'Elementos não encontrados' };
+          }
+          
+          let gamesAdded = 0;
+          
+          for (let i = 0; i < gamesToFill.length; i++) {
+            if (i > 0) {
+              await resetarQuantidade();
+              await limparSelecao();
+              if (lotteryType === 'maismilionaria') {
+                await limparTrevos();
+                await resetarQuantidadeTrevos();
+              }
+              await sleep(300);
+            }
+            
+            const numbers = gamesToFill[i];
+            const filled = await preencherJogo(numbers, i);
+            
+            if (filled > 0) {
+              if (lotteryType === 'timemania' && timeSugerido) {
+                await selecionarTime(timeSugerido);
+              }
+              if (lotteryType === 'diadesorte' && mesSugerido) {
+                await selecionarMes(mesSugerido);
+              }
+              
+              await sleep(200);
+              const added = await adicionarAoCarrinho();
+              if (added) gamesAdded++;
+            }
+            
+            await sleep(500);
+          }
+          
+          return { success: gamesAdded > 0, gamesAdded };
+        }
+        
+        return execute();
+      },
+      args: [jogos, lottery, timeSugerido, mesSugerido, quantidadeDezenas]
+    });
+    
+    console.log('[Aposta Rápido] Resultado do script:', results);
+    
+    // Após concluir, processar próxima loteria (não depender da mensagem do script)
+    if (remainingCount > 0) {
+      console.log('[Aposta Rápido] Aguardando antes de processar próxima loteria...');
+      setTimeout(() => processarProximaLoteria(), 3000);
+    } else {
+      console.log('[Aposta Rápido] Última loteria processada!');
+    }
+    
+  } catch (error) {
+    console.error('[Aposta Rápido] Erro ao executar script:', error);
+    // Mesmo com erro, tentar próxima
+    if (remainingCount > 0) {
+      setTimeout(() => processarProximaLoteria(), 2000);
+    }
+  }
+}
+
+// Listener para quando uma aba é atualizada
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url?.includes('loteriasonline.caixa.gov.br')) {
+    console.log('[Aposta Rápido] Portal Loterias Caixa detectado:', tab.url);
+  }
+});
+
+// Context menu
+if (chrome.contextMenus) {
+  chrome.runtime.onInstalled.addListener(() => {
+    chrome.contextMenus.create({
+      id: 'aposta-rapido-fill',
+      title: 'Preencher com Aposta Rápido',
+      contexts: ['page'],
+      documentUrlPatterns: ['https://www.loteriasonline.caixa.gov.br/*', 'https://loteriasonline.caixa.gov.br/*']
+    });
+  });
+
+  chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === 'aposta-rapido-fill') {
+      console.log('[Aposta Rápido] Context menu clicado');
+    }
+  });
+}
