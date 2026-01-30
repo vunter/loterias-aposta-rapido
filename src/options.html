@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aposta Rápido - Configurações</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>⚙️ Configurações</h1>
+      <p class="subtitle">Aposta Rápido — Loterias Caixa</p>
+    </header>
+
+    <main>
+      <section class="settings-group">
+        <h2>🌐 Conexão com API</h2>
+        <div class="field">
+          <label for="apiUrl">URL do Loterias Analyzer:</label>
+          <input type="text" id="apiUrl" placeholder="http://localhost:8080">
+          <small class="hint">Endereço do backend para geração de jogos</small>
+        </div>
+        <div class="field">
+          <label for="apiTimeout">Timeout da API (segundos):</label>
+          <input type="number" id="apiTimeout" min="5" max="120" value="30">
+          <small class="hint">Tempo máximo de espera por resposta</small>
+        </div>
+      </section>
+
+      <section class="settings-group">
+        <h2>🎯 Preenchimento</h2>
+        <div class="field">
+          <label for="fillDelay">Delay entre números (ms):</label>
+          <input type="number" id="fillDelay" min="10" max="500" value="30">
+          <small class="hint">Intervalo entre cada número preenchido no site</small>
+        </div>
+        <div class="field">
+          <label for="gameDelay">Delay entre jogos (ms):</label>
+          <input type="number" id="gameDelay" min="100" max="5000" value="200">
+          <small class="hint">Intervalo entre cada jogo adicionado ao carrinho</small>
+        </div>
+        <div class="field">
+          <label for="pageLoadWait">Espera para carregamento de página (s):</label>
+          <input type="number" id="pageLoadWait" min="1" max="30" value="4">
+          <small class="hint">Tempo de espera para o AngularJS carregar após navegação</small>
+        </div>
+        <div class="field">
+          <label class="checkbox-field">
+            <input type="checkbox" id="confirmBeforeFill" checked>
+            <span>Pedir confirmação antes de preencher</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="settings-group">
+        <h2>🗓️ Jogos do Dia</h2>
+        <div class="field">
+          <label for="jddTabDelay">Delay entre loterias (s):</label>
+          <input type="number" id="jddTabDelay" min="1" max="30" value="3">
+          <small class="hint">Tempo entre processar cada loteria no modo Jogos do Dia</small>
+        </div>
+      </section>
+
+      <section class="settings-group">
+        <h2>💾 Dados</h2>
+        <div class="data-actions">
+          <button id="exportBtn" class="btn btn-outline">📤 Exportar Configurações</button>
+          <button id="importBtn" class="btn btn-outline">📥 Importar Configurações</button>
+          <input type="file" id="importFile" accept=".json" style="display: none;">
+        </div>
+        <div class="data-actions" style="margin-top: 12px;">
+          <button id="resetBtn" class="btn btn-danger">🗑️ Restaurar Padrões</button>
+        </div>
+        <small class="hint" style="margin-top: 8px;">Exportar salva todas as configurações em JSON. Restaurar apaga tudo.</small>
+      </section>
+
+      <section class="status" id="statusSection" style="display: none;">
+        <div id="statusMessage"></div>
+      </section>
+
+      <div class="actions">
+        <button id="saveBtn" class="btn btn-primary">💾 Salvar</button>
+      </div>
+    </main>
+
+    <footer>
+      <p>Aposta Rápido v1.2.0 — Loterias Analyzer © 2025</p>
+    </footer>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
