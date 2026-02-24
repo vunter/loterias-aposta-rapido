@@ -215,14 +215,16 @@
         <div class="progress-details" id="progressDetails"></div>
       </section>
 
-      <section class="confirm-section" id="confirmSection" style="display: none;">
-        <div class="confirm-header"><svg class="icon" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> Confirmar Preenchimento</div>
-        <div class="confirm-body" id="confirmBody"></div>
-        <div class="confirm-actions">
-          <button id="confirmYes" class="btn btn-primary btn-confirm"><svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Preencher</button>
-          <button id="confirmNo" class="btn btn-secondary btn-confirm"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> Cancelar</button>
+      <div class="confirm-overlay" id="confirmSection" style="display: none;">
+        <div class="confirm-modal">
+          <div class="confirm-header"><svg class="icon" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> Confirmar Preenchimento</div>
+          <div class="confirm-body" id="confirmBody"></div>
+          <div class="confirm-actions">
+            <button id="confirmYes" class="btn btn-primary btn-confirm"><svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Preencher</button>
+            <button id="confirmNo" class="btn btn-secondary btn-confirm"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg> Cancelar</button>
+          </div>
         </div>
-      </section>
+      </div>
 
       <section class="status" id="statusSection" style="display: none;">
         <div id="statusMessage"></div>

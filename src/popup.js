@@ -1676,7 +1676,7 @@ function hideProgress() {
 function showConfirm(bodyHtml) {
   return new Promise((resolve) => {
     confirmBody.innerHTML = bodyHtml;
-    confirmSection.style.display = 'block';
+    confirmSection.style.display = 'flex';
 
     function onYes() { cleanup(); resolve(true); }
     function onNo() { cleanup(); resolve(false); }
