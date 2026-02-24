@@ -1,149 +1,150 @@
-# 🎰 Aposta Rápido - Extensão Chrome
+# Aposta Rapido - Extensao Chrome
 
-Extensão do Chrome para preencher automaticamente apostas no portal Loterias Online da Caixa com números gerados pelo **Loterias Analyzer**.
+Extensao do Chrome para preencher automaticamente apostas no portal Loterias Online da Caixa com numeros gerados pelo Loterias Analyzer.
 
-## ✨ Funcionalidades
+## Funcionalidades
 
-- ✅ Preenche automaticamente números no portal Loterias Online da Caixa
-- ✅ Suporta todas as modalidades de loteria:
+- Preenchimento automatico de numeros no portal Loterias Online da Caixa
+- Suporte a todas as modalidades de loteria:
   - Mega-Sena
-  - Lotofácil
+  - Lotofacil
   - Quina
   - Lotomania
-  - Timemania (com Time do Coração)
+  - Timemania (com Time do Coracao)
   - Dupla Sena
-  - Dia de Sorte (com Mês da Sorte)
+  - Dia de Sorte (com Mes da Sorte)
   - Super Sete
-  - +Milionária (com Trevos)
-- ✅ Importação direta da API do Loterias Analyzer
-- ✅ Suporte a múltiplos jogos
-- ✅ Interface moderna e intuitiva
+  - +Milionaria (com Trevos)
+- Importacao direta da API do Loterias Analyzer
+- Suporte a multiplos jogos
+- Pagina de configuracoes para definir URL da API e preferencias
+- Menu de contexto para acoes rapidas
 
-## 📦 Instalação
+## Instalacao
 
-### Modo Desenvolvedor (Recomendado para testes)
+### Modo Desenvolvedor
 
 1. Abra o Chrome e navegue para `chrome://extensions/`
 2. Ative o **Modo do desenvolvedor** (toggle no canto superior direito)
-3. Clique em **Carregar sem compactação**
+3. Clique em **Carregar sem compactacao**
 4. Selecione a pasta `aposta-rapido`
-5. A extensão será instalada e aparecerá na barra de ferramentas
+5. A extensao sera instalada e aparecera na barra de ferramentas
 
-### Gerar ícones (opcional)
+## Como Usar
 
-Os ícones placeholder precisam ser substituídos por ícones reais. Você pode usar qualquer ferramenta de design para criar ícones nos tamanhos:
-- 16x16 pixels
-- 48x48 pixels
-- 128x128 pixels
-
-## 🚀 Como Usar
-
-### Método 1: Colar números manualmente
+### Metodo 1: Colar numeros manualmente
 
 1. Gere jogos no Loterias Analyzer
-2. Copie os números gerados
+2. Copie os numeros gerados
 3. Abra o portal [Loterias Online da Caixa](https://www.loteriasonline.caixa.gov.br)
-4. Navegue até a página de apostas da loteria desejada
-5. Clique no ícone da extensão
+4. Navegue ate a pagina de apostas da loteria desejada
+5. Clique no icone da extensao
 6. Selecione o tipo de loteria
-7. Cole os números no campo de texto
-8. Clique em **Processar Números**
+7. Cole os numeros no campo de texto
+8. Clique em **Processar Numeros**
 9. Clique em **Preencher no Site**
 
-### Método 2: Importar da API
+### Metodo 2: Importar da API
 
-1. Configure a URL da API (padrão: `http://localhost:8080`)
+1. Configure a URL da API na pagina de opcoes (padrao: `http://localhost:8081`)
 2. Selecione o tipo de loteria
-3. Clique em **Buscar Últimos Jogos**
-4. Os números serão importados automaticamente
+3. Clique em **Buscar Ultimos Jogos**
+4. Os numeros serao importados automaticamente
 5. Clique em **Preencher no Site**
 
-## 🔧 Configuração
+## Configuracao
 
-### URL da API
-A extensão pode se conectar diretamente à API do Loterias Analyzer para importar jogos gerados. Configure a URL na seção "Importar do Loterias Analyzer".
+Acesse a pagina de opcoes da extensao (botao direito no icone > Opcoes) para definir:
 
-**Padrão:** `http://localhost:8080`
+- URL da API do Loterias Analyzer
+- Preferencias de preenchimento
 
-## ⚠️ Limitações
+## Limitacoes
 
-- A extensão funciona apenas no portal oficial [loteriasonline.caixa.gov.br](https://www.loteriasonline.caixa.gov.br)
+- Funciona apenas no portal oficial loteriasonline.caixa.gov.br
 - Os seletores CSS podem precisar de ajustes se o site da Caixa for atualizado
-- É necessário estar logado no portal para realizar apostas
-- A extensão **não realiza apostas automaticamente** - apenas preenche os números
+- E necessario estar logado no portal para realizar apostas
+- A extensao nao realiza apostas automaticamente, apenas preenche os numeros
 
-## 🛠️ Desenvolvimento
-
-### Estrutura do Projeto
+## Formatos de Entrada
 
 ```
-aposta-rapido/
-├── manifest.json          # Configuração da extensão
-├── icons/                 # Ícones da extensão
-│   ├── icon16.png
-│   ├── icon48.png
-│   └── icon128.png
-└── src/
-    ├── popup.html         # Interface do popup
-    ├── popup.css          # Estilos do popup
-    ├── popup.js           # Lógica do popup
-    ├── content.js         # Script injetado na página
-    ├── content.css        # Estilos injetados na página
-    └── background.js      # Service worker
-```
-
-### Testar alterações
-
-1. Faça as alterações nos arquivos
-2. Vá para `chrome://extensions/`
-3. Clique no botão de recarregar (🔄) na extensão
-4. Teste as alterações
-
-### Debug
-
-- **Popup**: Clique com botão direito no ícone da extensão → "Inspecionar popup"
-- **Content Script**: DevTools da página (F12) → Console
-- **Background**: `chrome://extensions/` → Clique em "service worker"
-
-## 📋 Formatos de entrada aceitos
-
-```
-# Separados por vírgula
+# Separados por virgula
 01, 15, 23, 34, 45, 60
 
-# Separados por espaço
+# Separados por espaco
 01 15 23 34 45 60
 
-# Múltiplos jogos (um por linha)
+# Multiplos jogos (um por linha)
 01, 15, 23, 34, 45, 60
 02, 18, 27, 38, 49, 55
-05, 12, 30, 41, 52, 58
 
-# +Milionária (6 dezenas + 2 trevos)
+# +Milionaria (6 dezenas + 2 trevos)
 01, 15, 23, 34, 45, 50, 1, 4
 ```
 
-## 🤝 Integração com Loterias Analyzer
+## Integracao com o Backend
 
-A extensão foi projetada para funcionar perfeitamente com o backend do Loterias Analyzer. O endpoint utilizado:
+A extensao consome o endpoint de geracao estrategica do backend:
 
 ```
 GET /api/estatisticas/{tipo}/gerar-jogos-estrategico?estrategia=NUMEROS_QUENTES&quantidade=1
 ```
 
-Resposta esperada:
+Resposta:
 ```json
 {
   "jogos": [[1, 15, 23, 34, 45, 60]],
   "timeSugerido": "FLAMENGO",
-  "mesSugerido": "Março"
+  "mesSugerido": "Marco"
 }
 ```
 
-## 📄 Licença
+## Estrutura do Projeto
 
-Este projeto faz parte do Loterias Analyzer.
+```
+aposta-rapido/
+├── manifest.json              # Manifest V3
+├── icons/
+│   ├── icon16.png
+│   ├── icon48.png
+│   └── icon128.png
+└── src/
+    ├── popup.html             # Interface do popup
+    ├── popup.css              # Estilos do popup
+    ├── popup.js               # Logica principal do popup
+    ├── content.js             # Script injetado na pagina da Caixa
+    ├── content.css            # Estilos injetados
+    ├── background.js          # Service worker
+    ├── options.html           # Pagina de configuracoes
+    ├── options.js             # Logica das configuracoes
+    └── options.css            # Estilos das configuracoes
+```
 
----
+### Permissoes
 
-**Nota:** Esta extensão é um projeto educacional e não tem vínculo oficial com a Caixa Econômica Federal. Use com responsabilidade.
+- `activeTab` - Acesso a aba ativa
+- `tabs` - Gerenciamento de abas
+- `storage` - Persistencia de configuracoes
+- `scripting` - Injecao de scripts na pagina
+- `contextMenus` - Menu de contexto do Chrome
+- Host permissions: `*.caixa.gov.br`
+
+## Desenvolvimento
+
+### Testar alteracoes
+
+1. Faca as alteracoes nos arquivos
+2. Va para `chrome://extensions/`
+3. Clique no botao de recarregar na extensao
+4. Teste as alteracoes
+
+### Debug
+
+- **Popup**: Botao direito no icone da extensao > "Inspecionar popup"
+- **Content Script**: DevTools da pagina (F12) > Console
+- **Background**: `chrome://extensions/` > Clique em "service worker"
+
+## Licenca
+
+Este projeto faz parte do Loterias Analyzer e e para fins educacionais. Nao tem vinculo oficial com a Caixa Economica Federal.
