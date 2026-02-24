@@ -765,18 +765,38 @@ async function executeDirectFill() {
         }
       }
       
-      // Função para resetar quantidade de números para o mínimo
-      async function resetarQuantidade() {
+      function lerQuantidadeAtual() {
         try {
           const diminuirBtn = document.getElementById('diminuirnumero');
           if (diminuirBtn && typeof angular !== 'undefined') {
             const scope = angular.element(diminuirBtn).scope();
-            if (scope && scope.vm) {
-              // Diminuir até o mínimo (clicar várias vezes)
-              for (let i = 0; i < 20; i++) {
-                try {
-                  scope.vm.modificarQtdNumerosAposta(false);
-                } catch (e) { break; }
+            if (scope?.vm?.qtdNumerosAposta) return scope.vm.qtdNumerosAposta;
+          }
+          const qtdEl = document.querySelector('.numero-aposta span, [ng-bind*="qtdNumerosAposta"]');
+          if (qtdEl) {
+            const val = parseInt(qtdEl.textContent.trim(), 10);
+            if (!isNaN(val) && val > 0) return val;
+          }
+        } catch (e) {}
+        return null;
+      }
+
+      async function ajustarQuantidade(qtdDesejada) {
+        try {
+          const qtdAtual = lerQuantidadeAtual();
+          if (qtdAtual === null || qtdAtual === qtdDesejada) return;
+
+          const aumentar = qtdDesejada > qtdAtual;
+          const diff = Math.abs(qtdDesejada - qtdAtual);
+          const btnId = aumentar ? 'aumentarnumero' : 'diminuirnumero';
+          const btn = document.getElementById(btnId);
+
+          if (btn && typeof angular !== 'undefined') {
+            const scope = angular.element(btn).scope();
+            if (scope?.vm?.modificarQtdNumerosAposta) {
+              for (let i = 0; i < diff; i++) {
+                try { scope.vm.modificarQtdNumerosAposta(aumentar); } catch (e) { break; }
+                await sleep(30);
               }
               applyAngular();
               await sleep(100);
@@ -1184,27 +1204,8 @@ async function executeDirectFill() {
         
         const isFirst = gameIndex === 0;
         
-        // 1. Ajustar quantidade de números se necessário
-        const qtdDesejada = numbersToFill.length;
-        if (qtdDesejada > minNumbers) {
-          const aumentarBtn = document.getElementById('aumentarnumero');
-          if (aumentarBtn && typeof angular !== 'undefined') {
-            try {
-              const scope = angular.element(aumentarBtn).scope();
-              if (scope && scope.vm && typeof scope.vm.modificarQtdNumerosAposta === 'function') {
-                const cliquesNecessarios = qtdDesejada - minNumbers;
-                for (let i = 0; i < cliquesNecessarios; i++) {
-                  scope.vm.modificarQtdNumerosAposta(true);
-                  await sleep(50);
-                }
-                applyAngular();
-                await sleep(100);
-              }
-            } catch (e) {
-              console.log('[Aposta Rápido] Erro ao ajustar quantidade:', e);
-            }
-          }
-        }
+        // 1. Ajustar quantidade de números para o desejado
+        await ajustarQuantidade(numbersToFill.length);
         
         // 2. Preencher os números
         let filled = 0;
@@ -1366,16 +1367,13 @@ async function executeDirectFill() {
         for (let i = 0; i < gamesToFill.length; i++) {
           const gameData = gamesToFill[i];
           
-          // Resetar para o próximo jogo (exceto o primeiro)
-          if (i > 0) {
-            await resetarQuantidade();
-            await limparSelecao();
-            if (extra.lottery === 'maismilionaria') {
-              await limparTrevos();
-              await resetarQuantidadeTrevos();
-            }
-            await sleep(200);
+          // Limpar volante antes de cada jogo
+          await limparSelecao();
+          if (extra.lottery === 'maismilionaria') {
+            await limparTrevos();
+            await resetarQuantidadeTrevos();
           }
+          if (i > 0) await sleep(200);
           
           const result = await preencherJogo(gameData, i);
           const ok = result.filled > 0;
@@ -1616,7 +1614,9 @@ async function handleJogosDoDia() {
           jogos: data.jogos,
           quantidadeDezenas: data.quantidadeDezenas || data.jogos[0]?.length || config.min,
           timeSugerido: data.timeSugerido || data.timesSugeridos?.[0] || '',
-          mesSugerido: data.mesSugerido || data.mesesSugeridos?.[0] || ''
+          mesSugerido: data.mesSugerido || data.mesesSugeridos?.[0] || '',
+          timesSugeridos: data.timesSugeridos || (data.timeSugerido ? [data.timeSugerido] : []),
+          mesesSugeridos: data.mesesSugeridos || (data.mesSugerido ? [data.mesSugerido] : [])
         };
       }
       fetchedCount++;

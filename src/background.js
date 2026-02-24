@@ -170,8 +170,8 @@ function waitForElement(tabId, selector, timeoutMs = 15000) {
 async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
   const jogos = jogosData?.jogos || [];
   const quantidadeDezenas = jogosData?.quantidadeDezenas || 0;
-  const timeSugerido = jogosData?.timeSugerido || '';
-  const mesSugerido = jogosData?.mesSugerido || '';
+  const timesSugeridos = jogosData?.timesSugeridos || (jogosData?.timeSugerido ? [jogosData.timeSugerido] : []);
+  const mesesSugeridos = jogosData?.mesesSugeridos || (jogosData?.mesSugerido ? [jogosData.mesSugerido] : []);
   
   console.log('[Aposta Rápido] Iniciando preenchimento:', lottery, 'jogos:', jogos?.length);
   
@@ -179,7 +179,7 @@ async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: 'MAIN',
-      func: (gamesToFill, lotteryType, timeSugerido, mesSugerido, qtdDezenas) => {
+      func: (gamesToFill, lotteryType, timesSugeridos, mesesSugeridos, qtdDezenas) => {
         console.log('[Aposta Rápido] === INICIANDO PREENCHIMENTO ===');
         console.log('[Aposta Rápido] Loteria:', lotteryType);
         console.log('[Aposta Rápido] Jogos:', JSON.stringify(gamesToFill));
@@ -302,14 +302,33 @@ async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
           applyAngular();
         }
         
-        async function resetarQuantidade() {
+        function lerQuantidadeAtual() {
           try {
             const diminuirBtn = document.getElementById('diminuirnumero');
             if (diminuirBtn && typeof angular !== 'undefined') {
               const scope = angular.element(diminuirBtn).scope();
+              if (scope?.vm?.qtdNumerosAposta) return scope.vm.qtdNumerosAposta;
+            }
+          } catch (e) {}
+          return null;
+        }
+
+        async function ajustarQuantidade(qtdDesejada) {
+          try {
+            const qtdAtual = lerQuantidadeAtual();
+            if (qtdAtual === null || qtdAtual === qtdDesejada) return;
+
+            const aumentar = qtdDesejada > qtdAtual;
+            const diff = Math.abs(qtdDesejada - qtdAtual);
+            const btnId = aumentar ? 'aumentarnumero' : 'diminuirnumero';
+            const btn = document.getElementById(btnId);
+
+            if (btn && typeof angular !== 'undefined') {
+              const scope = angular.element(btn).scope();
               if (scope?.vm?.modificarQtdNumerosAposta) {
-                for (let i = 0; i < 20; i++) {
-                  try { scope.vm.modificarQtdNumerosAposta(false); } catch (e) { break; }
+                for (let i = 0; i < diff; i++) {
+                  try { scope.vm.modificarQtdNumerosAposta(aumentar); } catch (e) { break; }
+                  await sleep(30);
                 }
                 applyAngular();
                 await sleep(100);
@@ -496,25 +515,29 @@ async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
           let gamesAdded = 0;
           
           for (let i = 0; i < gamesToFill.length; i++) {
-            if (i > 0) {
-              await resetarQuantidade();
-              await limparSelecao();
-              if (lotteryType === 'maismilionaria') {
-                await limparTrevos();
-                await resetarQuantidadeTrevos();
-              }
-              await sleep(300);
+            // Limpar volante antes de cada jogo
+            await limparSelecao();
+            if (lotteryType === 'maismilionaria') {
+              await limparTrevos();
+              await resetarQuantidadeTrevos();
             }
-            
+            if (i > 0) await sleep(300);
+
             const numbers = gamesToFill[i];
+
+            // Ajustar quantidade de números para o desejado
+            await ajustarQuantidade(numbers.length);
+
             const filled = await preencherJogo(numbers, i);
             
             if (filled > 0) {
-              if (lotteryType === 'timemania' && timeSugerido) {
-                await selecionarTime(timeSugerido);
+              if (lotteryType === 'timemania' && timesSugeridos.length > 0) {
+                const time = timesSugeridos[i % timesSugeridos.length];
+                await selecionarTime(time);
               }
-              if (lotteryType === 'diadesorte' && mesSugerido) {
-                await selecionarMes(mesSugerido);
+              if (lotteryType === 'diadesorte' && mesesSugeridos.length > 0) {
+                const mes = mesesSugeridos[i % mesesSugeridos.length];
+                await selecionarMes(mes);
               }
               
               await sleep(200);
@@ -530,7 +553,7 @@ async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
         
         return execute();
       },
-      args: [jogos, lottery, timeSugerido, mesSugerido, quantidadeDezenas]
+      args: [jogos, lottery, timesSugeridos, mesesSugeridos, quantidadeDezenas]
     });
     
     console.log('[Aposta Rápido] Resultado do script:', results);
