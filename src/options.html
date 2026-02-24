@@ -9,13 +9,13 @@
 <body>
   <div class="container">
     <header>
-      <h1>⚙️ Configurações</h1>
+      <h1><svg class="icon" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg> Configurações</h1>
       <p class="subtitle">Aposta Rápido — Loterias Caixa</p>
     </header>
 
     <main>
       <section class="settings-group">
-        <h2>🌐 Conexão com API</h2>
+        <h2><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg> Conexão com API</h2>
         <div class="field">
           <label for="apiUrl">URL do Loterias Analyzer:</label>
           <input type="text" id="apiUrl" placeholder="http://localhost:8080">
@@ -29,7 +29,7 @@
       </section>
 
       <section class="settings-group">
-        <h2>🎯 Preenchimento</h2>
+        <h2><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg> Preenchimento</h2>
         <div class="field">
           <label for="fillDelay">Delay entre números (ms):</label>
           <input type="number" id="fillDelay" min="10" max="500" value="30">
@@ -54,7 +54,7 @@
       </section>
 
       <section class="settings-group">
-        <h2>🗓️ Jogos do Dia</h2>
+        <h2><svg class="icon" viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg> Jogos do Dia</h2>
         <div class="field">
           <label for="jddTabDelay">Delay entre loterias (s):</label>
           <input type="number" id="jddTabDelay" min="1" max="30" value="3">
@@ -63,14 +63,14 @@
       </section>
 
       <section class="settings-group">
-        <h2>💾 Dados</h2>
+        <h2><svg class="icon" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg> Dados</h2>
         <div class="data-actions">
-          <button id="exportBtn" class="btn btn-outline">📤 Exportar Configurações</button>
-          <button id="importBtn" class="btn btn-outline">📥 Importar Configurações</button>
+          <button id="exportBtn" class="btn btn-outline"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg> Exportar Configurações</button>
+          <button id="importBtn" class="btn btn-outline"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> Importar Configurações</button>
           <input type="file" id="importFile" accept=".json" style="display: none;">
         </div>
         <div class="data-actions" style="margin-top: 12px;">
-          <button id="resetBtn" class="btn btn-danger">🗑️ Restaurar Padrões</button>
+          <button id="resetBtn" class="btn btn-danger"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Restaurar Padrões</button>
         </div>
         <small class="hint" style="margin-top: 8px;">Exportar salva todas as configurações em JSON. Restaurar apaga tudo.</small>
       </section>
@@ -80,7 +80,7 @@
       </section>
 
       <div class="actions">
-        <button id="saveBtn" class="btn btn-primary">💾 Salvar</button>
+        <button id="saveBtn" class="btn btn-primary"><svg class="icon" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg> Salvar</button>
       </div>
     </main>
 
@@ -89,6 +89,7 @@
     </footer>
   </div>
 
+  <script src="icons.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

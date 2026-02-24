@@ -274,16 +274,16 @@ function selecionarLoteriasParaDia(dia) {
 }
 
 const JDD_STRATEGY_OPTIONS = [
-  { value: 'NUMEROS_PREMIADOS', label: '🏆 Premiados' },
-  { value: 'NUMEROS_QUENTES', label: '🔥 Quentes' },
-  { value: 'NUMEROS_FRIOS', label: '❄️ Frios' },
-  { value: 'NUMEROS_ATRASADOS', label: '⏰ Atrasados' },
-  { value: 'EQUILIBRADO', label: '⚖️ Equilibrado' },
-  { value: 'COMBINADO', label: '🎯 Combinado' },
-  { value: 'PARES_FREQUENTES', label: '🔗 Pares Freq.' },
-  { value: 'DISTRIBUICAO_FAIXAS', label: '📊 Faixas' },
-  { value: 'TENDENCIA_RECENTE', label: '📈 Recente' },
-  { value: 'ALEATORIO', label: '🎲 Aleatório' },
+  { value: 'NUMEROS_PREMIADOS', label: 'Premiados' },
+  { value: 'NUMEROS_QUENTES', label: 'Quentes' },
+  { value: 'NUMEROS_FRIOS', label: 'Frios' },
+  { value: 'NUMEROS_ATRASADOS', label: 'Atrasados' },
+  { value: 'EQUILIBRADO', label: 'Equilibrado' },
+  { value: 'COMBINADO', label: 'Combinado' },
+  { value: 'PARES_FREQUENTES', label: 'Pares Freq.' },
+  { value: 'DISTRIBUICAO_FAIXAS', label: 'Faixas' },
+  { value: 'TENDENCIA_RECENTE', label: 'Recente' },
+  { value: 'ALEATORIO', label: 'Aleatório' },
 ];
 
 function togglePerLotteryStrategies() {
@@ -1393,7 +1393,7 @@ async function executeDirectFill() {
         if (gamesAdded > 0) {
           message = `${gamesAdded} jogo(s) adicionados ao carrinho! (${totalFilled} números)`;
           if (timesNaoEncontrados > 0) {
-            message += ` ⚠️ ${timesNaoEncontrados} time(s) não encontrado(s) no site.`;
+            message += ` [AVISO] ${timesNaoEncontrados} time(s) não encontrado(s) no site.`;
           }
         } else {
           message = 'Nenhum jogo preenchido. Verifique se está na página de apostas.';
@@ -1419,8 +1419,8 @@ async function executeDirectFill() {
     let detailsHtml = '';
     for (const gr of result.gameResults) {
       const cls = gr.ok ? 'success' : 'error';
-      const icon = gr.ok ? '✅' : '❌';
-      detailsHtml += `<div class="progress-step ${cls}">${icon} Jogo #${gr.index}: ${gr.filled} número(s)</div>`;
+      const stepIcon = gr.ok ? icon('check') : icon('x');
+      detailsHtml += `<div class="progress-step ${cls}">${stepIcon} Jogo #${gr.index}: ${gr.filled} número(s)</div>`;
     }
     showProgress('Concluído', ok, total, detailsHtml);
     setTimeout(hideProgress, 8000);
@@ -1428,7 +1428,7 @@ async function executeDirectFill() {
     hideProgress();
   }
   if (result?.success) {
-    showStatus(`✅ ${result.message}`, 'success');
+    showStatus(`${result.message}`, 'success');
   } else {
     showStatus(result?.message || 'Falha no preenchimento', 'error');
   }
@@ -1621,7 +1621,7 @@ async function handleJogosDoDia() {
       }
       fetchedCount++;
       showProgress('Gerando jogos...', fetchedCount, selectedLotteries.length,
-        `<div class="progress-step success">✅ ${config.name}: ${data.jogos?.length || 0} jogo(s)</div>`);
+        `<div class="progress-step success">${icon('check')} ${config.name}: ${data.jogos?.length || 0} jogo(s)</div>`);
     }
     
     const lotteriesKeys = Object.keys(jogosPorLoteria);
@@ -1638,7 +1638,7 @@ async function handleJogosDoDia() {
     });
     
     showProgress('Abrindo páginas...', 0, lotteriesKeys.length,
-      `<div class="progress-step pending">🚀 Preenchendo ${lotteriesKeys.length} loteria(s) em abas separadas...</div>`);
+      `<div class="progress-step pending">${icon('rocket')} Preenchendo ${lotteriesKeys.length} loteria(s) em abas separadas...</div>`);
     showStatus(`Jogos gerados! Abrindo ${lotteriesKeys.length} página(s) sequencialmente...`, 'success');
     setTimeout(hideProgress, 10000);
     
@@ -1947,14 +1947,14 @@ function applyTemplate(template) {
   }
 
   saveState();
-  showStatus('✅ Template aplicado!', 'success');
+  showStatus('Template aplicado!', 'success');
 }
 
 function saveTemplate() {
   const nameInput = document.getElementById('templateName');
   const name = (nameInput?.value || '').trim();
   if (!name) {
-    showStatus('⚠️ Digite um nome para o template.', 'warning');
+    showStatus('Digite um nome para o template.', 'warning');
     return;
   }
 
@@ -1972,7 +1972,7 @@ function saveTemplate() {
     chrome.storage.local.set({ templates }, () => {
       nameInput.value = '';
       renderTemplates();
-      showStatus(`💾 Template "${name}" salvo!`, 'success');
+      showStatus(`Template "${name}" salvo!`, 'success');
     });
   });
 }
@@ -2007,7 +2007,7 @@ function renderTemplates() {
             <div class="template-name">${t.name}</div>
             <div class="template-details">${details}</div>
           </div>
-          <button class="template-delete" data-delete-name="${t.name}" title="Excluir">✕</button>
+          <button class="template-delete" data-delete-name="${t.name}" title="Excluir">${icon('x')}</button>
         </div>
       `;
     }).join('');
