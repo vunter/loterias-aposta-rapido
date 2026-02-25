@@ -344,9 +344,12 @@ async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
           
           if (lotteryType === 'supersete') {
             // Super Sete: column-based IDs n{column}{digit}
-            for (let colIdx = 0; colIdx < numbers.length && colIdx < 7; colIdx++) {
-              const column = colIdx + 1;
-              const digit = numbers[colIdx];
+            // Distribute numbers round-robin across 7 columns:
+            // numbers[0..6] → columns 1-7 (1st digit), numbers[7..13] → columns 1-7 (2nd digit), etc.
+            const numColumns = 7;
+            for (let i = 0; i < numbers.length; i++) {
+              const column = (i % numColumns) + 1;
+              const digit = numbers[i];
               const elementId = `n${column}${digit}`;
               const element = document.getElementById(elementId);
               
@@ -526,7 +529,13 @@ async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
             const numbers = gamesToFill[i];
 
             // Ajustar quantidade de números para o desejado
-            await ajustarQuantidade(numbers.length);
+            // +Milionária: flat array has dezenas+trevos, only count dezenas
+            if (lotteryType === 'maismilionaria') {
+              const splitAt = qtdDezenas > 0 ? qtdDezenas : 6;
+              await ajustarQuantidade(splitAt);
+            } else {
+              await ajustarQuantidade(numbers.length);
+            }
 
             const filled = await preencherJogo(numbers, i);
             

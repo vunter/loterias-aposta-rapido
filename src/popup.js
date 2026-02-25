@@ -1219,11 +1219,12 @@ async function executeDirectFill() {
         
         if (extra.lottery === 'supersete') {
           // Super Sete: column-based filling
-          // numbersToFill = [digit_col1, digit_col2, ..., digit_col7]
-          // Element IDs: n{column}{digit} where column is 1-7, digit is 0-9
-          for (let colIdx = 0; colIdx < numbersToFill.length && colIdx < 7; colIdx++) {
-            const column = colIdx + 1;
-            const digit = numbersToFill[colIdx];
+          // Distribute numbers round-robin across 7 columns:
+          // numbersToFill[0..6] → columns 1-7 (1st digit), [7..13] → columns 1-7 (2nd digit), etc.
+          const numColumns = 7;
+          for (let i = 0; i < numbersToFill.length; i++) {
+            const column = (i % numColumns) + 1;
+            const digit = numbersToFill[i];
             const elementId = `n${column}${digit}`;
             const element = document.getElementById(elementId);
             
