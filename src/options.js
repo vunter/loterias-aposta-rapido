@@ -83,10 +83,21 @@ function importAll(event) {
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result);
-      if (typeof data !== 'object' || data === null) {
+      if (typeof data !== 'object' || data === null || Array.isArray(data)) {
         throw new Error('Formato inválido');
       }
-      chrome.storage.local.set(data, () => {
+      // Only import known keys — ignore unknown entries
+      const ALLOWED_KEYS = new Set([...OPTION_KEYS, 'templates', 'savedGames']);
+      const sanitized = {};
+      for (const key of Object.keys(data)) {
+        if (ALLOWED_KEYS.has(key)) {
+          sanitized[key] = data[key];
+        }
+      }
+      if (Object.keys(sanitized).length === 0) {
+        throw new Error('Nenhuma chave válida encontrada');
+      }
+      chrome.storage.local.set(sanitized, () => {
         loadOptions();
         showStatus('Configurações importadas com sucesso!', 'success');
       });

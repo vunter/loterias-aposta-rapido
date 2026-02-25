@@ -1,5 +1,12 @@
 // Configurações das loterias
 // Dias: 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 const LOTTERY_CONFIG = {
   megasena: { name: 'Mega-Sena', min: 6, max: 20, range: [1, 60], url: 'mega-sena', dias: [2, 4, 6] },
   lotofacil: { name: 'Lotofácil', min: 15, max: 20, range: [1, 25], url: 'lotofacil', dias: [1, 2, 3, 4, 5, 6] },
@@ -2000,14 +2007,15 @@ function renderTemplates() {
     container.innerHTML = templates.map(t => {
       const config = t.config;
       const lotName = LOTTERY_CONFIG[config.lottery]?.name || config.lottery;
-      const details = `${lotName} • ${config.quantidadeJogos} jogo(s) • ${config.estrategia}`;
+      const details = `${escapeHtml(lotName)} • ${config.quantidadeJogos} jogo(s) • ${escapeHtml(config.estrategia)}`;
+      const safeName = escapeHtml(t.name);
       return `
-        <div class="template-item" data-template-name="${t.name}">
+        <div class="template-item" data-template-name="${safeName}">
           <div class="template-info" title="Clique para aplicar">
-            <div class="template-name">${t.name}</div>
+            <div class="template-name">${safeName}</div>
             <div class="template-details">${details}</div>
           </div>
-          <button class="template-delete" data-delete-name="${t.name}" title="Excluir">${icon('x')}</button>
+          <button class="template-delete" data-delete-name="${safeName}" title="Excluir">${icon('x')}</button>
         </div>
       `;
     }).join('');
