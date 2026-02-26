@@ -5,6 +5,7 @@
   "description": "Preencha automaticamente seus jogos de loteria no portal da Caixa com números gerados pelo Loterias Analyzer",
   "permissions": [
     "activeTab",
+    "tabs",
     "storage",
     "scripting",
     "contextMenus"
