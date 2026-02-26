@@ -72,9 +72,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Processa a próxima loteria da fila
 async function processarProximaLoteria() {
   try {
-    const result = await chrome.storage.local.get(['jogosDoDiaFila', 'jogosDoDia', 'jogosDoDiaTotal']);
+    const result = await chrome.storage.local.get(['jogosDoDiaFila', 'jogosDoDia', 'jogosDoDiaTotal', 'jddTabDelay', 'pageLoadWait']);
     let fila = result.jogosDoDiaFila || [];
     const jogosPorLoteria = result.jogosDoDia || {};
+    const jddTabDelay = (result.jddTabDelay || 3) * 1000;
+    const pageLoadWait = (result.pageLoadWait || 4) * 1000;
     
     console.log('[Aposta Rápido] Fila atual:', fila);
     console.log('[Aposta Rápido] Loterias disponíveis:', Object.keys(jogosPorLoteria));
@@ -117,12 +119,18 @@ async function processarProximaLoteria() {
     console.log('[Aposta Rápido] Página carregou, aguardando volante...');
     
     // Wait for the lottery number grid to render instead of fixed delay
-    await waitForElement(tab.id, 'ul.escolhe-numero a[id^="n"]');
-    await waitForAngularReady(tab.id);
+    await waitForElement(tab.id, 'ul.escolhe-numero a[id^="n"]', pageLoadWait * 2);
+    await waitForAngularReady(tab.id, pageLoadWait * 2);
     
-    sendJddMessage({ action: 'jddFilling', lottery, remaining: fila.length });
+    const totalGames = jogosData?.jogos?.length || 0;
+    // Build remaining summary: lottery -> game count
+    const remainingSummary = {};
+    for (const key of fila) {
+      remainingSummary[key] = jogosPorLoteria[key]?.jogos?.length || 0;
+    }
+    sendJddMessage({ action: 'jddFilling', lottery, remaining: fila.length, totalGames, remainingSummary });
     
-    await executeFillForTab(tab.id, lottery, jogosData, fila.length);
+    await executeFillForTab(tab.id, lottery, jogosData, fila.length, jddTabDelay);
     jddRetryCount = 0; // Reset on success
     
   } catch (error) {
@@ -228,7 +236,7 @@ function sendJddMessage(msg) {
   try { chrome.runtime.sendMessage(msg); } catch (_) {}
 }
 
-async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
+async function executeFillForTab(tabId, lottery, jogosData, remainingCount, jddTabDelay) {
   const jogos = jogosData?.jogos || [];
   const quantidadeDezenas = jogosData?.quantidadeDezenas || 0;
   const timesSugeridos = jogosData?.timesSugeridos || (jogosData?.timeSugerido ? [jogosData.timeSugerido] : []);
@@ -237,412 +245,363 @@ async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
   console.log('[Aposta Rápido] Iniciando preenchimento:', lottery, 'jogos:', jogos?.length);
   
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: 'MAIN',
-      func: (gamesToFill, lotteryType, timesSugeridos, mesesSugeridos, qtdDezenas) => {
-        console.log('[Aposta Rápido] === INICIANDO PREENCHIMENTO ===');
-        console.log('[Aposta Rápido] Loteria:', lotteryType);
-        console.log('[Aposta Rápido] Jogos:', JSON.stringify(gamesToFill));
-        
-        function applyAngular() {
-          try {
-            if (typeof angular !== 'undefined') {
-              const rootScope = angular.element(document.body).injector()?.get('$rootScope');
-              if (rootScope && !rootScope.$$phase) rootScope.$apply();
-            }
-          } catch (e) {}
-        }
-        
-        function sleep(ms) {
-          return new Promise(resolve => setTimeout(resolve, ms));
-        }
-        
-        async function limparSelecao() {
-          try {
-            const selectedElements = document.querySelectorAll('ul.escolhe-numero a.selected');
-            for (const el of selectedElements) {
+    let gamesAdded = 0;
+    
+    for (let gameIdx = 0; gameIdx < jogos.length; gameIdx++) {
+      // Send per-game progress directly from background — no relay needed
+      sendJddMessage({ action: 'jddGameProgress', lottery, current: gameIdx + 1, total: jogos.length });
+      
+      const singleGame = [jogos[gameIdx]];
+      const timeForGame = timesSugeridos.length > 0 ? [timesSugeridos[gameIdx % timesSugeridos.length]] : [];
+      const mesForGame = mesesSugeridos.length > 0 ? [mesesSugeridos[gameIdx % mesesSugeridos.length]] : [];
+      
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: (gamesToFill, lotteryType, timesSugeridos, mesesSugeridos, qtdDezenas, isFirstGame) => {
+          function applyAngular() {
+            try {
               if (typeof angular !== 'undefined') {
-                const scope = angular.element(el).scope();
-                if (scope?.numero && scope?.vm?.selecionar) {
-                  scope.vm.selecionar(scope.numero);
-                }
+                const rootScope = angular.element(document.body).injector()?.get('$rootScope');
+                if (rootScope && !rootScope.$$phase) rootScope.$apply();
               }
-            }
-            applyAngular();
-            await sleep(100);
-          } catch (e) {
-            console.log('[Aposta Rápido] Erro ao limpar seleção:', e);
+            } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
           }
-        }
-        
-        async function limparTrevos() {
-          try {
-            const anyTrevo = document.getElementById('trevo1');
-            if (anyTrevo && typeof angular !== 'undefined') {
-              const scope = angular.element(anyTrevo).scope();
-              if (scope?.vm?.limparTrevo) {
-                scope.vm.limparTrevo();
-                applyAngular();
-                await sleep(100);
-                return;
-              }
-            }
-            // Fallback: deselect individually
-            for (let t = 1; t <= 6; t++) {
-              const el = document.getElementById('trevo' + t);
-              if (el && typeof angular !== 'undefined') {
-                const scope = angular.element(el).scope();
-                if (scope?.numero?.selecionado && scope?.vm?.selecionarMaisMilionariaTrevo) {
-                  scope.vm.selecionarMaisMilionariaTrevo(scope.numero);
+          
+          function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+          }
+          
+          async function limparSelecao() {
+            try {
+              const selectedElements = document.querySelectorAll('ul.escolhe-numero a.selected');
+              for (const el of selectedElements) {
+                if (typeof angular !== 'undefined') {
+                  const scope = angular.element(el).scope();
+                  if (scope?.numero && scope?.vm?.selecionar) {
+                    scope.vm.selecionar(scope.numero);
+                  }
                 }
               }
+              applyAngular();
+              await sleep(100);
+            } catch (e) {
+              console.log('[Aposta Rápido] Erro ao limpar seleção:', e);
             }
-            applyAngular();
-            await sleep(100);
-          } catch (e) {}
-        }
-        
-        async function resetarQuantidadeTrevos() {
-          try {
-            const btns = document.querySelectorAll('a[ng-click*="modificarQtdNumerosApostaMaisMilionariaTrevo"]');
-            for (const btn of btns) {
-              if (btn.textContent.trim() === '-' && typeof angular !== 'undefined') {
-                const scope = angular.element(btn).scope();
-                if (scope?.vm?.modificarQtdNumerosApostaMaisMilionariaTrevo) {
-                  for (let i = 0; i < 6; i++) {
-                    try { scope.vm.modificarQtdNumerosApostaMaisMilionariaTrevo(false); } catch (e) { break; }
-                  }
+          }
+          
+          async function limparTrevos() {
+            try {
+              const anyTrevo = document.getElementById('trevo1');
+              if (anyTrevo && typeof angular !== 'undefined') {
+                const scope = angular.element(anyTrevo).scope();
+                if (scope?.vm?.limparTrevo) {
+                  scope.vm.limparTrevo();
                   applyAngular();
                   await sleep(100);
                   return;
                 }
               }
-            }
-          } catch (e) {}
-        }
-        
-        async function preencherTrevos(trevos) {
-          if (!trevos || trevos.length === 0) return;
+              for (let t = 1; t <= 6; t++) {
+                const el = document.getElementById('trevo' + t);
+                if (el && typeof angular !== 'undefined') {
+                  const scope = angular.element(el).scope();
+                  if (scope?.numero?.selecionado && scope?.vm?.selecionarMaisMilionariaTrevo) {
+                    scope.vm.selecionarMaisMilionariaTrevo(scope.numero);
+                  }
+                }
+              }
+              applyAngular();
+              await sleep(100);
+            } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
+          }
           
-          // Adjust trevo count if > 2
-          if (trevos.length > 2) {
-            const btns = document.querySelectorAll('a[ng-click*="modificarQtdNumerosApostaMaisMilionariaTrevo"]');
-            for (const btn of btns) {
-              if (btn.textContent.trim() === '+' && typeof angular !== 'undefined') {
-                const scope = angular.element(btn).scope();
-                if (scope?.vm?.modificarQtdNumerosApostaMaisMilionariaTrevo) {
-                  for (let i = 0; i < trevos.length - 2; i++) {
-                    scope.vm.modificarQtdNumerosApostaMaisMilionariaTrevo(true);
+          async function resetarQuantidadeTrevos() {
+            try {
+              const btns = document.querySelectorAll('a[ng-click*="modificarQtdNumerosApostaMaisMilionariaTrevo"]');
+              for (const btn of btns) {
+                if (btn.textContent.trim() === '-' && typeof angular !== 'undefined') {
+                  const scope = angular.element(btn).scope();
+                  if (scope?.vm?.modificarQtdNumerosApostaMaisMilionariaTrevo) {
+                    for (let i = 0; i < 6; i++) {
+                      try { scope.vm.modificarQtdNumerosApostaMaisMilionariaTrevo(false); } catch (e) { break; }
+                    }
+                    applyAngular();
+                    await sleep(100);
+                    return;
+                  }
+                }
+              }
+            } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
+          }
+          
+          async function preencherTrevos(trevos) {
+            if (!trevos || trevos.length === 0) return;
+            if (trevos.length > 2) {
+              const btns = document.querySelectorAll('a[ng-click*="modificarQtdNumerosApostaMaisMilionariaTrevo"]');
+              for (const btn of btns) {
+                if (btn.textContent.trim() === '+' && typeof angular !== 'undefined') {
+                  const scope = angular.element(btn).scope();
+                  if (scope?.vm?.modificarQtdNumerosApostaMaisMilionariaTrevo) {
+                    for (let i = 0; i < trevos.length - 2; i++) {
+                      scope.vm.modificarQtdNumerosApostaMaisMilionariaTrevo(true);
+                      await sleep(50);
+                    }
+                    applyAngular();
+                    await sleep(100);
+                    break;
+                  }
+                }
+              }
+            }
+            for (const trevo of trevos) {
+              const element = document.getElementById('trevo' + trevo);
+              if (element && typeof angular !== 'undefined') {
+                try {
+                  const scope = angular.element(element).scope();
+                  if (scope?.numero && scope?.vm?.selecionarMaisMilionariaTrevo) {
+                    scope.vm.selecionarMaisMilionariaTrevo(scope.numero);
                     await sleep(50);
+                    continue;
+                  }
+                } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
+              }
+              if (element) element.click();
+              await sleep(50);
+            }
+            applyAngular();
+          }
+          
+          async function lerQuantidadeAtual() {
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const diminuirBtn = document.getElementById('diminuirnumero');
+                if (diminuirBtn && typeof angular !== 'undefined') {
+                  const scope = angular.element(diminuirBtn).scope();
+                  if (scope?.vm?.qtdNumerosAposta) return scope.vm.qtdNumerosAposta;
+                }
+              } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
+              if (attempt < 2) await sleep(200);
+            }
+            return null;
+          }
+
+          async function ajustarQuantidade(qtdDesejada) {
+            try {
+              const qtdAtual = await lerQuantidadeAtual();
+              if (qtdAtual === null || qtdAtual === qtdDesejada) return;
+              const aumentar = qtdDesejada > qtdAtual;
+              const diff = Math.abs(qtdDesejada - qtdAtual);
+              const btn = document.getElementById(aumentar ? 'aumentarnumero' : 'diminuirnumero');
+              if (btn && typeof angular !== 'undefined') {
+                const scope = angular.element(btn).scope();
+                if (scope?.vm?.modificarQtdNumerosAposta) {
+                  for (let i = 0; i < diff; i++) {
+                    try { scope.vm.modificarQtdNumerosAposta(aumentar); } catch (e) { break; }
+                    await sleep(30);
                   }
                   applyAngular();
                   await sleep(100);
-                  break;
                 }
               }
-            }
+            } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
           }
           
-          // Select trevos
-          for (const trevo of trevos) {
-            const element = document.getElementById('trevo' + trevo);
-            if (element && typeof angular !== 'undefined') {
-              try {
-                const scope = angular.element(element).scope();
-                if (scope?.numero && scope?.vm?.selecionarMaisMilionariaTrevo) {
-                  scope.vm.selecionarMaisMilionariaTrevo(scope.numero);
-                  await sleep(50);
-                  continue;
+          async function preencherJogo(numbers) {
+            let filled = 0;
+            if (lotteryType === 'supersete') {
+              const numColumns = 7;
+              for (let i = 0; i < numbers.length; i++) {
+                const column = (i % numColumns) + 1;
+                const digit = numbers[i];
+                const elementId = `n${7 * digit + column}`;
+                const element = document.getElementById(elementId);
+                if (element && typeof angular !== 'undefined') {
+                  try {
+                    const scope = angular.element(element).scope();
+                    if (scope?.numero && scope?.vm?.selecionar) {
+                      scope.vm.selecionar(scope.numero);
+                      filled++;
+                      await sleep(30);
+                      continue;
+                    }
+                  } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
                 }
-              } catch (e) {}
-            }
-            if (element) element.click();
-            await sleep(50);
-          }
-          applyAngular();
-        }
-        
-        async function lerQuantidadeAtual() {
-          for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-              const diminuirBtn = document.getElementById('diminuirnumero');
-              if (diminuirBtn && typeof angular !== 'undefined') {
-                const scope = angular.element(diminuirBtn).scope();
-                if (scope?.vm?.qtdNumerosAposta) return scope.vm.qtdNumerosAposta;
+                if (element) { element.click(); filled++; }
+                await sleep(30);
               }
-            } catch (e) {}
-            if (attempt < 2) await sleep(200);
-          }
-          console.warn('[Aposta Rápido] Não foi possível ler quantidade atual de números');
-          return null;
-        }
-
-        async function ajustarQuantidade(qtdDesejada) {
-          try {
-            const qtdAtual = await lerQuantidadeAtual();
-            if (qtdAtual === null) {
-              console.warn('[Aposta Rápido] Não foi possível ajustar quantidade: quantidade atual desconhecida');
-              return;
-            }
-            if (qtdAtual === qtdDesejada) return;
-
-            const aumentar = qtdDesejada > qtdAtual;
-            const diff = Math.abs(qtdDesejada - qtdAtual);
-            const btnId = aumentar ? 'aumentarnumero' : 'diminuirnumero';
-            const btn = document.getElementById(btnId);
-
-            if (btn && typeof angular !== 'undefined') {
-              const scope = angular.element(btn).scope();
-              if (scope?.vm?.modificarQtdNumerosAposta) {
-                for (let i = 0; i < diff; i++) {
-                  try { scope.vm.modificarQtdNumerosAposta(aumentar); } catch (e) { break; }
-                  await sleep(30);
+            } else if (lotteryType === 'maismilionaria') {
+              const splitAt = qtdDezenas > 0 ? qtdDezenas : 6;
+              const dezenas = numbers.slice(0, splitAt);
+              const trevos = numbers.slice(splitAt);
+              for (const num of dezenas) {
+                let element = document.getElementById('n' + String(num).padStart(2, '0'));
+                if (!element) element = document.getElementById('n' + num);
+                if (element && typeof angular !== 'undefined') {
+                  try {
+                    const scope = angular.element(element).scope();
+                    if (scope?.numero && scope?.vm?.selecionar) {
+                      scope.vm.selecionar(scope.numero);
+                      filled++;
+                      await sleep(30);
+                      continue;
+                    }
+                  } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
                 }
-                applyAngular();
-                await sleep(100);
+                if (element) { element.click(); filled++; }
+                await sleep(30);
+              }
+              applyAngular();
+              await sleep(100);
+              if (trevos.length > 0) await preencherTrevos(trevos);
+            } else {
+              for (const num of numbers) {
+                const paddedNum = String(num).padStart(2, '0');
+                let element = document.getElementById('n' + paddedNum);
+                if (!element) element = document.getElementById('n' + num);
+                if (element && typeof angular !== 'undefined') {
+                  try {
+                    const scope = angular.element(element).scope();
+                    if (scope?.numero && scope?.vm?.selecionar) {
+                      scope.vm.selecionar(scope.numero);
+                      filled++;
+                      await sleep(30);
+                      continue;
+                    }
+                  } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
+                }
+                if (element) { element.click(); filled++; }
+                await sleep(30);
               }
             }
-          } catch (e) {}
-        }
-        
-        async function preencherJogo(numbers, gameIndex) {
-          console.log(`[Aposta Rápido] Preenchendo jogo ${gameIndex + 1}:`, numbers);
-          
-          let filled = 0;
-          
-          if (lotteryType === 'supersete') {
-            // Super Sete: sequential IDs n1..n70 in a 7-column grid
-            // Layout: row=digit(0-9), cols=1-7. Element ID = n(7*digit + column)
-            // numbers distributed round-robin across 7 columns
-            const numColumns = 7;
-            for (let i = 0; i < numbers.length; i++) {
-              const column = (i % numColumns) + 1;
-              const digit = numbers[i];
-              const elementId = `n${7 * digit + column}`;
-              const element = document.getElementById(elementId);
-              
-              if (element && typeof angular !== 'undefined') {
-                try {
-                  const scope = angular.element(element).scope();
-                  if (scope?.numero && scope?.vm?.selecionar) {
-                    scope.vm.selecionar(scope.numero);
-                    filled++;
-                    await sleep(30);
-                    continue;
-                  }
-                } catch (e) {}
-              }
-              if (element) {
-                element.click();
-                filled++;
-              }
-              await sleep(30);
-            }
-          } else if (lotteryType === 'maismilionaria') {
-            // +Milionária: split flat array into dezenas + trevos using qtdDezenas
-            const splitAt = qtdDezenas > 0 ? qtdDezenas : 6;
-            const dezenas = numbers.slice(0, splitAt);
-            const trevos = numbers.slice(splitAt);
-            
-            // Fill dezenas
-            for (const num of dezenas) {
-              let element = document.getElementById('n' + String(num).padStart(2, '0'));
-              if (!element) element = document.getElementById('n' + num);
-              
-              if (element && typeof angular !== 'undefined') {
-                try {
-                  const scope = angular.element(element).scope();
-                  if (scope?.numero && scope?.vm?.selecionar) {
-                    scope.vm.selecionar(scope.numero);
-                    filled++;
-                    await sleep(30);
-                    continue;
-                  }
-                } catch (e) {}
-              }
-              if (element) {
-                element.click();
-                filled++;
-              }
-              await sleep(30);
-            }
-            
             applyAngular();
-            await sleep(100);
-            
-            // Fill trevos
-            if (trevos.length > 0) {
-              await preencherTrevos(trevos);
-            }
-          } else {
-            // Standard filling for all other lotteries
-            for (const num of numbers) {
-              const paddedNum = String(num).padStart(2, '0');
-              let element = document.getElementById('n' + paddedNum);
-              if (!element) element = document.getElementById('n' + num);
-              
-              if (element && typeof angular !== 'undefined') {
-                try {
-                  const scope = angular.element(element).scope();
-                  if (scope?.numero && scope?.vm?.selecionar) {
-                    scope.vm.selecionar(scope.numero);
-                    filled++;
-                    await sleep(30);
-                    continue;
-                  }
-                } catch (e) {}
-              }
-              if (element) {
-                element.click();
-                filled++;
-              }
-              await sleep(30);
-            }
+            await sleep(200);
+            return filled;
           }
           
-          applyAngular();
-          await sleep(200);
+          async function adicionarAoCarrinho() {
+            const carrinhoBtn = document.getElementById('colocarnocarrinho');
+            if (carrinhoBtn && typeof angular !== 'undefined') {
+              try {
+                const scope = angular.element(carrinhoBtn).scope();
+                if (scope?.vm?.incluirAposta) {
+                  scope.vm.incluirAposta();
+                  applyAngular();
+                  await sleep(500);
+                  return true;
+                }
+              } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
+              carrinhoBtn.click();
+              await sleep(500);
+              return true;
+            }
+            return false;
+          }
           
-          return filled;
-        }
-        
-        async function adicionarAoCarrinho() {
-          const carrinhoBtn = document.getElementById('colocarnocarrinho');
-          if (carrinhoBtn && typeof angular !== 'undefined') {
+          async function selecionarTime(timeNome) {
+            if (!timeNome) return false;
+            const timeNomeNorm = timeNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
             try {
-              const scope = angular.element(carrinhoBtn).scope();
-              if (scope?.vm?.incluirAposta) {
-                scope.vm.incluirAposta();
-                applyAngular();
-                await sleep(500);
-                return true;
-              }
-            } catch (e) {}
-            carrinhoBtn.click();
-            await sleep(500);
-            return true;
-          }
-          return false;
-        }
-        
-        async function selecionarTime(timeNome) {
-          if (!timeNome) return false;
-          const timeNomeNorm = timeNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-          
-          try {
-            const timesLi = document.querySelectorAll('li[ng-repeat*="equipe in listaEquipe"]');
-            for (const li of timesLi) {
-              if (typeof angular !== 'undefined') {
-                const scope = angular.element(li).scope();
-                if (scope?.equipe) {
-                  const equipeNome = (scope.equipe.nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-                  if (equipeNome.includes(timeNomeNorm) || timeNomeNorm.includes(equipeNome)) {
-                    if (typeof scope.configurarTime === 'function') {
-                      scope.configurarTime(scope.equipe);
-                      applyAngular();
-                      await sleep(100);
-                      return true;
+              const timesLi = document.querySelectorAll('li[ng-repeat*="equipe in listaEquipe"]');
+              for (const li of timesLi) {
+                if (typeof angular !== 'undefined') {
+                  const scope = angular.element(li).scope();
+                  if (scope?.equipe) {
+                    const equipeNome = (scope.equipe.nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                    if (equipeNome.includes(timeNomeNorm) || timeNomeNorm.includes(equipeNome)) {
+                      if (typeof scope.configurarTime === 'function') {
+                        scope.configurarTime(scope.equipe);
+                        applyAngular();
+                        await sleep(100);
+                        return true;
+                      }
                     }
                   }
                 }
               }
-            }
-          } catch (e) {}
-          return false;
-        }
-        
-        async function selecionarMes(mesNome) {
-          if (!mesNome) return false;
-          const mesNomeNorm = mesNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+            } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
+            return false;
+          }
           
-          try {
-            const mesesLi = document.querySelectorAll('li[ng-repeat*="mes in listaMeses"]');
-            for (const li of mesesLi) {
-              if (typeof angular !== 'undefined') {
-                const scope = angular.element(li).scope();
-                if (scope?.mes) {
-                  const nomeMes = (scope.mes.nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-                  if (nomeMes === mesNomeNorm || nomeMes.startsWith(mesNomeNorm.slice(0, 3))) {
-                    if (typeof scope.configurarMes === 'function') {
-                      scope.configurarMes(scope.mes);
-                      applyAngular();
-                      await sleep(100);
-                      return true;
+          async function selecionarMes(mesNome) {
+            if (!mesNome) return false;
+            const mesNomeNorm = mesNome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+            try {
+              const mesesLi = document.querySelectorAll('li[ng-repeat*="mes in listaMeses"]');
+              for (const li of mesesLi) {
+                if (typeof angular !== 'undefined') {
+                  const scope = angular.element(li).scope();
+                  if (scope?.mes) {
+                    const nomeMes = (scope.mes.nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                    if (nomeMes === mesNomeNorm || nomeMes.startsWith(mesNomeNorm.slice(0, 3))) {
+                      if (typeof scope.configurarMes === 'function') {
+                        scope.configurarMes(scope.mes);
+                        applyAngular();
+                        await sleep(100);
+                        return true;
+                      }
                     }
                   }
                 }
               }
-            }
-          } catch (e) {}
-          return false;
-        }
-        
-        async function execute() {
-          const elements = document.querySelectorAll('ul.escolhe-numero a[id^="n"]');
-          if (elements.length === 0) {
-            return { success: false, message: 'Elementos não encontrados' };
+            } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
+            return false;
           }
           
-          let gamesAdded = 0;
-          
-          for (let i = 0; i < gamesToFill.length; i++) {
-            // Limpar volante antes de cada jogo
+          async function execute() {
+            const elements = document.querySelectorAll('ul.escolhe-numero a[id^="n"]');
+            if (elements.length === 0) {
+              return { success: false, message: 'Elementos não encontrados' };
+            }
+            
             await limparSelecao();
             if (lotteryType === 'maismilionaria') {
               await limparTrevos();
               await resetarQuantidadeTrevos();
             }
-            if (i > 0) await sleep(300);
-
-            const numbers = gamesToFill[i];
-
-            // Ajustar quantidade de números para o desejado
-            // +Milionária: flat array has dezenas+trevos, only count dezenas
+            if (!isFirstGame) await sleep(300);
+            
+            const numbers = gamesToFill[0];
             if (lotteryType === 'maismilionaria') {
               const splitAt = qtdDezenas > 0 ? qtdDezenas : 6;
               await ajustarQuantidade(splitAt);
             } else {
               await ajustarQuantidade(numbers.length);
             }
-
-            const filled = await preencherJogo(numbers, i);
             
+            const filled = await preencherJogo(numbers);
+            let added = false;
             if (filled > 0) {
               if (lotteryType === 'timemania' && timesSugeridos.length > 0) {
-                const time = timesSugeridos[i % timesSugeridos.length];
-                await selecionarTime(time);
+                await selecionarTime(timesSugeridos[0]);
               }
               if (lotteryType === 'diadesorte' && mesesSugeridos.length > 0) {
-                const mes = mesesSugeridos[i % mesesSugeridos.length];
-                await selecionarMes(mes);
+                await selecionarMes(mesesSugeridos[0]);
               }
-              
               await sleep(200);
-              const added = await adicionarAoCarrinho();
-              if (added) gamesAdded++;
+              added = await adicionarAoCarrinho();
             }
-            
             await sleep(500);
+            return { success: added, gamesAdded: added ? 1 : 0 };
           }
           
-          return { success: gamesAdded > 0, gamesAdded };
-        }
-        
-        return execute();
-      },
-      args: [jogos, lottery, timesSugeridos, mesesSugeridos, quantidadeDezenas]
-    });
+          return execute();
+        },
+        args: [singleGame, lottery, timeForGame, mesForGame, quantidadeDezenas, gameIdx === 0]
+      });
+      
+      const fillResult = results[0]?.result;
+      if (fillResult?.gamesAdded) gamesAdded++;
+    }
     
-    console.log('[Aposta Rápido] Resultado do script:', results);
+    console.log('[Aposta Rápido] Resultado final:', lottery, 'gamesAdded:', gamesAdded);
     
-    const fillResult = results[0]?.result;
-    sendJddMessage({ action: 'jddFilled', lottery, remaining: remainingCount, success: fillResult?.success || false });
+    sendJddMessage({ action: 'jddFilled', lottery, remaining: remainingCount, success: gamesAdded > 0, gamesAdded, totalGames: jogos.length });
     
     // Após concluir, processar próxima loteria (não depender da mensagem do script)
     if (remainingCount > 0) {
       console.log('[Aposta Rápido] Aguardando antes de processar próxima loteria...');
-      setTimeout(() => processarProximaLoteria(), 3000);
+      setTimeout(() => processarProximaLoteria(), jddTabDelay || 3000);
     } else {
       console.log('[Aposta Rápido] Última loteria processada!');
       sendJddMessage({ action: 'jddComplete' });
@@ -654,7 +613,7 @@ async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
     sendJddMessage({ action: 'jddFilled', lottery, remaining: remainingCount, success: false });
     // Mesmo com erro, tentar próxima
     if (remainingCount > 0) {
-      setTimeout(() => processarProximaLoteria(), 2000);
+      setTimeout(() => processarProximaLoteria(), jddTabDelay || 2000);
     } else {
       sendJddMessage({ action: 'jddComplete' });
       chrome.storage.local.remove(['jogosDoDiaFila', 'jogosDoDia', 'jogosDoDiaTotal']);

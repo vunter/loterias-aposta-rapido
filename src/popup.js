@@ -7,12 +7,13 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-const ICONS = {
-  check: '<svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',
-  x: '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
-  rocket: '<svg class="icon" viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>'
-};
-function icon(name) { return ICONS[name] || ''; }
+function fetchWithTimeout(url, timeoutSec) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), (timeoutSec || appOptions.apiTimeout || 30) * 1000);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+}
+
+// ICONS and icon() are provided by icons.js (loaded before this file)
 
 const LOTTERY_CONFIG = {
   megasena: { name: 'Mega-Sena', min: 6, max: 20, range: [1, 60], url: 'mega-sena', dias: [2, 4, 6] },
@@ -108,6 +109,7 @@ function init() {
   updateQuantidadeNumerosRange();
   updatePlaceholder();
   renderTemplates();
+  loadStrategiesFromApi();
   
   // Copyright year
   const yearEl = document.getElementById('copyrightYear');
@@ -140,25 +142,54 @@ function init() {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'jddFilling') {
       const name = LOTTERY_CONFIG[request.lottery]?.name || request.lottery;
-      jddDetailsHtml += `<div class="progress-step pending" data-lottery="${request.lottery}">⏳ ${name}...</div>`;
+      const gamesLabel = request.totalGames ? ` (0/${request.totalGames})` : '';
+      jddDetailsHtml += `<div class="progress-step active" data-lottery="${request.lottery}">⏳ ${name}${gamesLabel}</div>`;
+      // Show remaining lotteries summary
+      if (request.remainingSummary && Object.keys(request.remainingSummary).length > 0) {
+        const remainingItems = Object.entries(request.remainingSummary)
+          .map(([key, count]) => `${LOTTERY_CONFIG[key]?.name || key}: ${count} jogo${count > 1 ? 's' : ''}`)
+          .join(' · ');
+        jddDetailsHtml = jddDetailsHtml.replace(/<div class="progress-remaining">.*?<\/div>/, '');
+        jddDetailsHtml += `<div class="progress-remaining">Próximas: ${remainingItems}</div>`;
+      } else {
+        jddDetailsHtml = jddDetailsHtml.replace(/<div class="progress-remaining">.*?<\/div>/, '');
+      }
       const completed = jddTotal - request.remaining - 1;
       showProgressModal('Preenchendo jogos...', completed, jddTotal, jddDetailsHtml);
+    }
+    if (request.action === 'jddGameProgress') {
+      // Per-game progress within current lottery
+      const name = LOTTERY_CONFIG[request.lottery]?.name || request.lottery;
+      const activeRegex = new RegExp(
+        `<div class="progress-step active" data-lottery="${request.lottery}">.*?</div>`
+      );
+      jddDetailsHtml = jddDetailsHtml.replace(
+        activeRegex,
+        `<div class="progress-step active" data-lottery="${request.lottery}">⏳ ${name} (${request.current}/${request.total})</div>`
+      );
+      showProgressModal('Preenchendo jogos...', null, null, jddDetailsHtml);
     }
     if (request.action === 'jddFilled') {
       const name = LOTTERY_CONFIG[request.lottery]?.name || request.lottery;
       const stepIcon = request.success ? icon('check') : icon('x');
       const cls = request.success ? 'success' : 'error';
-      const pendingRegex = new RegExp(
-        `<div class="progress-step pending" data-lottery="${request.lottery}">.*?</div>`
+      const gamesInfo = request.totalGames ? ` — ${request.gamesAdded || 0}/${request.totalGames}` : '';
+      const activeRegex = new RegExp(
+        `<div class="progress-step active" data-lottery="${request.lottery}">.*?</div>`
       );
       jddDetailsHtml = jddDetailsHtml.replace(
-        pendingRegex,
-        `<div class="progress-step ${cls}">${stepIcon} ${name}</div>`
+        activeRegex,
+        `<div class="progress-step ${cls}">${stepIcon} ${name}${gamesInfo}</div>`
       );
+      // Remove remaining summary when no more remaining
+      if (request.remaining === 0) {
+        jddDetailsHtml = jddDetailsHtml.replace(/<div class="progress-remaining">.*?<\/div>/, '');
+      }
       const completed = jddTotal - request.remaining;
       showProgressModal('Preenchendo jogos...', completed, jddTotal, jddDetailsHtml);
     }
     if (request.action === 'jddComplete') {
+      jddDetailsHtml = jddDetailsHtml.replace(/<div class="progress-remaining">.*?<\/div>/, '');
       showProgressModal('Concluído!', jddTotal, jddTotal, jddDetailsHtml);
       setTimeout(() => {
         hideProgressModal();
@@ -227,6 +258,30 @@ function loadAppOptions() {
       apiUrlInput.value = result.apiUrl;
     }
   });
+}
+
+async function loadStrategiesFromApi() {
+  const apiUrl = apiUrlInput?.value?.trim();
+  if (!apiUrl) return;
+  try {
+    const response = await fetchWithTimeout(`${apiUrl}/api/estatisticas/estrategias`, 5);
+    if (!response.ok) return;
+    const strategies = await response.json();
+    if (!Array.isArray(strategies) || strategies.length === 0) return;
+    // Update JDD_STRATEGY_OPTIONS from backend
+    JDD_STRATEGY_OPTIONS = strategies.map(s => ({
+      value: s.nome || s,
+      label: s.descricao || (s.nome || s).replace(/_/g, ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase())
+    }));
+    // Update main strategy dropdown
+    const currentVal = estrategiaSelect.value;
+    estrategiaSelect.innerHTML = JDD_STRATEGY_OPTIONS.map(o =>
+      `<option value="${o.value}"${o.value === currentVal ? ' selected' : ''}>${o.label}</option>`
+    ).join('');
+    console.log('[Aposta Rápido] Estratégias carregadas da API:', JDD_STRATEGY_OPTIONS.length);
+  } catch (_) {
+    // Backend unreachable — use hardcoded defaults, that's fine
+  }
 }
 
 function setupEventListeners() {
@@ -358,7 +413,7 @@ function selecionarLoteriasParaDia(dia) {
   saveState();
 }
 
-const JDD_STRATEGY_OPTIONS = [
+let JDD_STRATEGY_OPTIONS = [
   { value: 'NUMEROS_PREMIADOS', label: 'Premiados' },
   { value: 'NUMEROS_QUENTES', label: 'Quentes' },
   { value: 'NUMEROS_FRIOS', label: 'Frios' },
@@ -425,6 +480,7 @@ function toggleTrevoFixo(trevo, btn) {
   if (trevosFixos.includes(trevo)) {
     trevosFixos = trevosFixos.filter(t => t !== trevo);
     btn.classList.remove('selected');
+    btn.setAttribute('aria-pressed', 'false');
   } else {
     if (trevosFixos.length >= quantidadeTrevos) {
       showStatus(`Máximo de ${quantidadeTrevos} trevos. Aumente a quantidade ou desmarque outro.`, 'error');
@@ -433,6 +489,7 @@ function toggleTrevoFixo(trevo, btn) {
     trevosFixos.push(trevo);
     trevosFixos.sort((a, b) => a - b);
     btn.classList.add('selected');
+    btn.setAttribute('aria-pressed', 'true');
   }
   
   updateTrevosDisplay();
@@ -446,7 +503,10 @@ function validateTrevosFixos() {
   while (trevosFixos.length > quantidadeTrevos) {
     const removido = trevosFixos.pop();
     const btn = document.querySelector(`.trevo-btn[data-trevo="${removido}"]`);
-    if (btn) btn.classList.remove('selected');
+    if (btn) {
+      btn.classList.remove('selected');
+      btn.setAttribute('aria-pressed', 'false');
+    }
   }
   
   updateTrevosDisplay();
@@ -473,7 +533,10 @@ function handleLotteryChange() {
   
   // Resetar trevos fixos
   trevosFixos = [];
-  document.querySelectorAll('.trevo-btn').forEach(btn => btn.classList.remove('selected'));
+  document.querySelectorAll('.trevo-btn').forEach(btn => {
+    btn.classList.remove('selected');
+    btn.setAttribute('aria-pressed', 'false');
+  });
   
   // Resetar campo de trevos
   const trevosInput = document.getElementById('trevos');
@@ -587,9 +650,20 @@ function handleParse() {
     return;
   }
 
+  // Warn if some games were skipped
+  const skippedCount = rawGames.length - parsedGames.length;
+  const warnings = [];
+  if (skippedCount > 0) {
+    warnings.push(`${skippedCount} jogo(s) ignorado(s) por números insuficientes`);
+  }
+
   displayParsedGames();
   fillBtn.disabled = false;
-  showStatus(`${parsedGames.length} jogo(s) processado(s) com sucesso!`, 'success');
+  if (warnings.length > 0) {
+    showStatus(`${parsedGames.length} jogo(s) processado(s). ⚠️ ${warnings.join('. ')}`, 'warning');
+  } else {
+    showStatus(`${parsedGames.length} jogo(s) processado(s) com sucesso!`, 'success');
+  }
 }
 
 function parseNumbers(text) {
@@ -738,11 +812,12 @@ function waitForTabComplete(tabId) {
  * Much more reliable than a fixed timeout — resolves as soon as
  * the Angular app finishes rendering the number buttons.
  */
-function waitForVolante(tabId, timeoutMs = 15000) {
+function waitForVolante(tabId, timeoutMs) {
+  const timeout = timeoutMs || (appOptions.pageLoadWait || 4) * 1000 * 2;
   const start = Date.now();
   return new Promise(resolve => {
     async function poll() {
-      if (Date.now() - start > timeoutMs) {
+      if (Date.now() - start > timeout) {
         console.warn('[Aposta Rápido] Timeout esperando volante, continuando...');
         resolve(false);
         return;
@@ -848,9 +923,14 @@ async function executeDirectFill() {
     trevosManual: parseNumbers(document.getElementById('trevos')?.value || '')
   };
 
+  const fillOptions = {
+    fillDelay: appOptions.fillDelay || 30,
+    gameDelay: appOptions.gameDelay || 200
+  };
+
   const results = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
-    func: (gamesToFill, minNumbers, extra) => {
+    func: (gamesToFill, minNumbers, extra, opts) => {
       
       // Função auxiliar para aplicar mudanças no Angular
       function applyAngular() {
@@ -861,7 +941,7 @@ async function executeDirectFill() {
               rootScope.$apply();
             }
           }
-        } catch (e) {}
+        } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
       }
       
       // Função auxiliar para delay
@@ -902,7 +982,7 @@ async function executeDirectFill() {
               const val = parseInt(qtdEl.textContent.trim(), 10);
               if (!isNaN(val) && val > 0) return val;
             }
-          } catch (e) {}
+          } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
           if (attempt < 2) await sleep(200);
         }
         console.warn('[Aposta Rápido] Não foi possível ler quantidade atual de números');
@@ -928,13 +1008,13 @@ async function executeDirectFill() {
             if (scope?.vm?.modificarQtdNumerosAposta) {
               for (let i = 0; i < diff; i++) {
                 try { scope.vm.modificarQtdNumerosAposta(aumentar); } catch (e) { break; }
-                await sleep(30);
+                await sleep(opts.fillDelay);
               }
               applyAngular();
               await sleep(100);
             }
           }
-        } catch (e) {}
+        } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
       }
       
       // Função para limpar seleção de trevos (+Milionária)
@@ -981,7 +1061,7 @@ async function executeDirectFill() {
               }
             }
           }
-        } catch (e) {}
+        } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
       }
       
       // Função para preencher trevos (+Milionária)
@@ -1162,7 +1242,7 @@ async function executeDirectFill() {
                     matchNomeLi = li;
                   }
                 }
-              } catch (e) {}
+              } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
             }
             
             // Fallback: verificar pelo texto visível
@@ -1231,7 +1311,7 @@ async function executeDirectFill() {
               if (scope?.equipe) {
                 timesDisponiveis.push(`${scope.equipe.nome}/${scope.equipe.uf} (${scope.equipe.nomeClass})`);
               }
-            } catch (e) {}
+            } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
           }
           console.log('[Aposta Rápido] Primeiros times disponíveis:', timesDisponiveis);
           return false;
@@ -1281,7 +1361,7 @@ async function executeDirectFill() {
                     return true;
                   }
                 }
-              } catch (e) {}
+              } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
             }
             
             // Fallback: verificar pelo texto visível
@@ -1314,7 +1394,7 @@ async function executeDirectFill() {
               if (scope?.mes) {
                 mesesDisponiveis.push(`${scope.mes.nome} (${scope.mes.abreviacao})`);
               }
-            } catch (e) {}
+            } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
           }
           console.log('[Aposta Rápido] Primeiros meses disponíveis:', mesesDisponiveis);
           return false;
@@ -1454,7 +1534,7 @@ async function executeDirectFill() {
           }
         }
         
-        await sleep(200);
+        await sleep(opts.gameDelay);
         
         // 4. Clicar no botão "Colocar no Carrinho"
         if (filled > 0) {
@@ -1468,7 +1548,7 @@ async function executeDirectFill() {
                 await sleep(300);
                 return { filled, timeEncontrado };
               }
-            } catch (e) {}
+            } catch (e) { console.debug("[Aposta Rápido] catch:", e.message); }
             carrinhoBtn.click();
             await sleep(300);
           }
@@ -1507,7 +1587,7 @@ async function executeDirectFill() {
             await limparTrevos();
             await resetarQuantidadeTrevos();
           }
-          if (i > 0) await sleep(200);
+          if (i > 0) await sleep(opts.gameDelay);
           
           const result = await preencherJogo(gameData, i);
           const ok = result.filled > 0;
@@ -1540,7 +1620,7 @@ async function executeDirectFill() {
       
       return execute();
     },
-    args: [allGames, config.min, extraData],
+    args: [allGames, config.min, extraData, fillOptions],
     world: 'MAIN'
   });
 
@@ -1609,7 +1689,7 @@ async function handleFetchGames() {
       }
     }
     
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     
     const data = await response.json();
@@ -1658,7 +1738,9 @@ async function handleFetchGames() {
       }
       
       if (currentLottery !== 'diadesorte' || !data.mesesSugeridos || data.mesesSugeridos.length <= 1) {
-        showStatus(`${data.jogos.length} jogo(s) gerado(s) com sucesso!`, 'success');
+        const estrategiaLabel = data.estrategia || estrategia;
+        const geradoInfo = data.geradoEm ? ` às ${new Date(data.geradoEm).toLocaleTimeString('pt-BR')}` : '';
+        showStatus(`${data.jogos.length} jogo(s) gerado(s) (${estrategiaLabel})${geradoInfo}`, 'success');
       }
       
       // Auto-processar
@@ -1668,7 +1750,10 @@ async function handleFetchGames() {
     }
   } catch (error) {
     console.error('Erro ao buscar jogos:', error);
-    showStatus(`Erro ao conectar com a API: ${error.message}`, 'error');
+    const msg = error.name === 'AbortError'
+      ? `Timeout: a API não respondeu em ${appOptions.apiTimeout}s`
+      : `Erro ao conectar com a API: ${error.message}`;
+    showStatus(msg, 'error');
   }
   
   saveState();
@@ -1735,7 +1820,7 @@ async function handleJogosDoDia() {
       const config = LOTTERY_CONFIG[lottery];
       const endpoint = mapLotteryToEndpoint(lottery);
       
-      jddDetailsHtml += `<div class="progress-step pending" data-lottery="${lottery}">⏳ ${config.name}...</div>`;
+      jddDetailsHtml += `<div class="progress-step active" data-lottery="${lottery}">⏳ ${config.name}...</div>`;
       showProgressModal('Gerando jogos...', fetchedCount, selectedLotteries.length, jddDetailsHtml);
       
       let url = `${apiUrl}/api/estatisticas/${endpoint}/gerar-jogos-estrategico?estrategia=${getStrategy(lottery)}&quantidade=${quantidade}`;
@@ -1752,7 +1837,7 @@ async function handleJogosDoDia() {
         url += `&quantidadeTrevos=${qtdTrevos}`;
       }
       
-      const response = await fetch(url);
+      const response = await fetchWithTimeout(url);
       if (!response.ok) throw new Error(`${config.name}: HTTP ${response.status}`);
       
       const data = await response.json();
@@ -1761,7 +1846,7 @@ async function handleJogosDoDia() {
         console.warn(`[Aposta Rápido] Resposta inválida da API para ${config.name}`);
         fetchedCount++;
         jddDetailsHtml = jddDetailsHtml.replace(
-          new RegExp(`<div class="progress-step pending" data-lottery="${lottery}">.*?</div>`),
+          new RegExp(`<div class="progress-step active" data-lottery="${lottery}">.*?</div>`),
           `<div class="progress-step error">${icon('x')} ${config.name}: resposta inválida</div>`
         );
         showProgressModal('Gerando jogos...', fetchedCount, selectedLotteries.length, jddDetailsHtml);
@@ -1780,7 +1865,7 @@ async function handleJogosDoDia() {
       }
       fetchedCount++;
       jddDetailsHtml = jddDetailsHtml.replace(
-        new RegExp(`<div class="progress-step pending" data-lottery="${lottery}">.*?</div>`),
+        new RegExp(`<div class="progress-step active" data-lottery="${lottery}">.*?</div>`),
         `<div class="progress-step success">${icon('check')} ${config.name}: ${data.jogos?.length || 0} jogo(s)</div>`
       );
       showProgressModal('Gerando jogos...', fetchedCount, selectedLotteries.length, jddDetailsHtml);
@@ -1846,10 +1931,12 @@ function showProgressModal(label, current, total, details) {
   
   if (!modal) return;
   modal.style.display = 'flex';
-  if (labelEl) labelEl.textContent = label;
-  if (countEl) countEl.textContent = `${current}/${total}`;
-  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-  if (barFill) barFill.style.width = `${pct}%`;
+  if (labelEl && label) labelEl.textContent = label;
+  if (countEl && current !== null && total !== null) countEl.textContent = `${current}/${total}`;
+  if (barFill && current !== null && total !== null) {
+    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+    barFill.style.width = `${pct}%`;
+  }
   if (details && detailsEl) detailsEl.innerHTML = details;
 }
 
@@ -2009,7 +2096,10 @@ function loadSavedState() {
       trevosFixos = result.trevosFixos;
       trevosFixos.forEach(trevo => {
         const btn = document.querySelector(`.trevo-btn[data-trevo="${trevo}"]`);
-        if (btn) btn.classList.add('selected');
+         if (btn) {
+          btn.classList.add('selected');
+          btn.setAttribute('aria-pressed', 'true');
+        }
       });
       updateTrevosDisplay();
     }
@@ -2094,7 +2184,11 @@ function getCurrentConfig() {
   };
 }
 
-function applyTemplate(template) {
+function applyTemplate(templateOrConfig) {
+  // Accept both full template object and legacy config-only object
+  const template = templateOrConfig.config || templateOrConfig;
+  const savedNumbers = templateOrConfig.numbersInput || '';
+  
   if (template.lottery) {
     lotterySelect.value = template.lottery;
     currentLottery = template.lottery;
@@ -2117,12 +2211,18 @@ function applyTemplate(template) {
 
   // Reset trevos fixos
   trevosFixos = [];
-  document.querySelectorAll('.trevo-btn').forEach(btn => btn.classList.remove('selected'));
+  document.querySelectorAll('.trevo-btn').forEach(btn => {
+    btn.classList.remove('selected');
+    btn.setAttribute('aria-pressed', 'false');
+  });
   if (template.trevosFixos && Array.isArray(template.trevosFixos)) {
     trevosFixos = [...template.trevosFixos];
     trevosFixos.forEach(trevo => {
       const btn = document.querySelector(`.trevo-btn[data-trevo="${trevo}"]`);
-      if (btn) btn.classList.add('selected');
+      if (btn) {
+        btn.classList.add('selected');
+        btn.setAttribute('aria-pressed', 'true');
+      }
     });
     updateTrevosDisplay();
   }
@@ -2165,6 +2265,13 @@ function applyTemplate(template) {
   }
 
   updatePlaceholder();
+
+  // Restore saved game numbers if present
+  if (savedNumbers) {
+    numbersInput.value = savedNumbers;
+    handleParse();
+  }
+
   saveState();
   showStatus('Template aplicado!', 'success');
 }
@@ -2178,7 +2285,12 @@ function saveTemplate() {
   }
 
   const config = getCurrentConfig();
-  const template = { name, config, savedAt: new Date().toISOString() };
+  const template = {
+    name,
+    config,
+    numbersInput: numbersInput.value,
+    savedAt: new Date().toISOString()
+  };
 
   chrome.storage.local.get(['templates'], (result) => {
     const templates = result.templates || [];
@@ -2219,7 +2331,9 @@ function renderTemplates() {
     container.innerHTML = templates.map(t => {
       const config = t.config;
       const lotName = LOTTERY_CONFIG[config.lottery]?.name || config.lottery;
-      const details = `${escapeHtml(lotName)} • ${config.quantidadeJogos} jogo(s) • ${escapeHtml(config.estrategia)}`;
+      const gameCount = t.numbersInput ? t.numbersInput.split(/[;\n]/).filter(g => g.trim()).length : 0;
+      const gamesLabel = gameCount > 0 ? ` • ${gameCount} jogo(s) salvo(s)` : '';
+      const details = `${escapeHtml(lotName)} • ${config.quantidadeJogos} jogo(s) • ${escapeHtml(config.estrategia)}${gamesLabel}`;
       const safeName = escapeHtml(t.name);
       return `
         <div class="template-item" data-template-name="${safeName}">
@@ -2236,7 +2350,7 @@ function renderTemplates() {
       const tName = item.dataset.templateName;
       item.querySelector('.template-info').addEventListener('click', () => {
         const tmpl = templates.find(t => t.name === tName);
-        if (tmpl) applyTemplate(tmpl.config);
+        if (tmpl) applyTemplate(tmpl);
       });
     });
 
