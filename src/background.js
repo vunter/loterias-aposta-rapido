@@ -73,7 +73,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Processa a próxima loteria da fila
 async function processarProximaLoteria() {
   try {
-    const result = await chrome.storage.local.get(['jogosDoDiaFila', 'jogosDoDia']);
+    const result = await chrome.storage.local.get(['jogosDoDiaFila', 'jogosDoDia', 'jogosDoDiaTotal']);
     let fila = result.jogosDoDiaFila || [];
     const jogosPorLoteria = result.jogosDoDia || {};
     
@@ -82,8 +82,8 @@ async function processarProximaLoteria() {
     
     if (fila.length === 0) {
       console.log('[Aposta Rápido] Fila vazia - todas as loterias processadas!');
-      // Limpar dados
-      await chrome.storage.local.remove(['jogosDoDiaFila', 'jogosDoDia']);
+      sendJddMessage({ action: 'jddComplete' });
+      await chrome.storage.local.remove(['jogosDoDiaFila', 'jogosDoDia', 'jogosDoDiaTotal']);
       return;
     }
     
@@ -119,6 +119,9 @@ async function processarProximaLoteria() {
     
     // Wait for the lottery number grid to render instead of fixed delay
     await waitForElement(tab.id, 'ul.escolhe-numero a[id^="n"]');
+    await waitForAngularReady(tab.id);
+    
+    sendJddMessage({ action: 'jddFilling', lottery, remaining: fila.length });
     
     await executeFillForTab(tab.id, lottery, jogosData, fila.length);
     jddRetryCount = 0; // Reset on success
@@ -184,6 +187,46 @@ function waitForElement(tabId, selector, timeoutMs = 15000) {
     }
     poll();
   });
+}
+
+/**
+ * Polls the page until Angular scopes are bound to number elements.
+ * This ensures vm.selecionar() is available before we try to fill.
+ * Must use world: 'MAIN' since Angular lives in the page's main world.
+ */
+function waitForAngularReady(tabId, timeoutMs = 10000) {
+  const start = Date.now();
+  return new Promise(resolve => {
+    async function poll() {
+      if (Date.now() - start > timeoutMs) {
+        console.warn('[Aposta Rápido] Timeout esperando Angular scope, continuando...');
+        resolve(false);
+        return;
+      }
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId },
+          world: 'MAIN',
+          func: () => {
+            if (typeof angular === 'undefined') return false;
+            const el = document.querySelector('ul.escolhe-numero a[id^="n"]');
+            if (!el) return false;
+            try {
+              const scope = angular.element(el).scope();
+              return !!(scope && scope.numero && scope.vm && typeof scope.vm.selecionar === 'function');
+            } catch (e) { return false; }
+          }
+        });
+        if (result) { resolve(true); return; }
+      } catch (_) {}
+      setTimeout(poll, 500);
+    }
+    poll();
+  });
+}
+
+function sendJddMessage(msg) {
+  try { chrome.runtime.sendMessage(msg); } catch (_) {}
 }
 
 async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
@@ -594,19 +637,28 @@ async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
     
     console.log('[Aposta Rápido] Resultado do script:', results);
     
+    const fillResult = results[0]?.result;
+    sendJddMessage({ action: 'jddFilled', lottery, remaining: remainingCount, success: fillResult?.success || false });
+    
     // Após concluir, processar próxima loteria (não depender da mensagem do script)
     if (remainingCount > 0) {
       console.log('[Aposta Rápido] Aguardando antes de processar próxima loteria...');
       setTimeout(() => processarProximaLoteria(), 3000);
     } else {
       console.log('[Aposta Rápido] Última loteria processada!');
+      sendJddMessage({ action: 'jddComplete' });
+      chrome.storage.local.remove(['jogosDoDiaFila', 'jogosDoDia', 'jogosDoDiaTotal']);
     }
     
   } catch (error) {
     console.error('[Aposta Rápido] Erro ao executar script:', error);
+    sendJddMessage({ action: 'jddFilled', lottery, remaining: remainingCount, success: false });
     // Mesmo com erro, tentar próxima
     if (remainingCount > 0) {
       setTimeout(() => processarProximaLoteria(), 2000);
+    } else {
+      sendJddMessage({ action: 'jddComplete' });
+      chrome.storage.local.remove(['jogosDoDiaFila', 'jogosDoDia', 'jogosDoDiaTotal']);
     }
   }
 }

@@ -7,6 +7,13 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+const ICONS = {
+  check: '<svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',
+  x: '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  rocket: '<svg class="icon" viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>'
+};
+function icon(name) { return ICONS[name] || ''; }
+
 const LOTTERY_CONFIG = {
   megasena: { name: 'Mega-Sena', min: 6, max: 20, range: [1, 60], url: 'mega-sena', dias: [2, 4, 6] },
   lotofacil: { name: 'Lotofácil', min: 15, max: 20, range: [1, 25], url: 'lotofacil', dias: [1, 2, 3, 4, 5, 6] },
@@ -55,6 +62,11 @@ let appOptions = {
   apiTimeout: 30
 };
 
+// JDD progress modal state
+let jddCancelled = false;
+let jddTotal = 0;
+let jddDetailsHtml = '';
+
 // Elementos DOM
 const lotterySelect = document.getElementById('lotteryType');
 const numbersInput = document.getElementById('numbersInput');
@@ -97,6 +109,10 @@ function init() {
   updatePlaceholder();
   renderTemplates();
   
+  // Copyright year
+  const yearEl = document.getElementById('copyrightYear');
+  if (yearEl) yearEl.textContent = new Date().getFullYear();
+  
   // Templates
   const saveTemplateBtn = document.getElementById('saveTemplateBtn');
   if (saveTemplateBtn) saveTemplateBtn.addEventListener('click', saveTemplate);
@@ -108,6 +124,48 @@ function init() {
       chrome.runtime.openOptionsPage();
     });
   }
+  
+  // Progress modal cancel
+  const progressCancelBtn = document.getElementById('progressCancelBtn');
+  if (progressCancelBtn) {
+    progressCancelBtn.addEventListener('click', async () => {
+      jddCancelled = true;
+      await chrome.storage.local.remove(['jogosDoDiaFila', 'jogosDoDia', 'jogosDoDiaTotal']);
+      hideProgressModal();
+      showStatus('Jogos do Dia cancelado', 'info');
+    });
+  }
+  
+  // Listen for JDD progress from background
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'jddFilling') {
+      const name = LOTTERY_CONFIG[request.lottery]?.name || request.lottery;
+      jddDetailsHtml += `<div class="progress-step pending" data-lottery="${request.lottery}">⏳ ${name}...</div>`;
+      const completed = jddTotal - request.remaining - 1;
+      showProgressModal('Preenchendo jogos...', completed, jddTotal, jddDetailsHtml);
+    }
+    if (request.action === 'jddFilled') {
+      const name = LOTTERY_CONFIG[request.lottery]?.name || request.lottery;
+      const stepIcon = request.success ? icon('check') : icon('x');
+      const cls = request.success ? 'success' : 'error';
+      const pendingRegex = new RegExp(
+        `<div class="progress-step pending" data-lottery="${request.lottery}">.*?</div>`
+      );
+      jddDetailsHtml = jddDetailsHtml.replace(
+        pendingRegex,
+        `<div class="progress-step ${cls}">${stepIcon} ${name}</div>`
+      );
+      const completed = jddTotal - request.remaining;
+      showProgressModal('Preenchendo jogos...', completed, jddTotal, jddDetailsHtml);
+    }
+    if (request.action === 'jddComplete') {
+      showProgressModal('Concluído!', jddTotal, jddTotal, jddDetailsHtml);
+      setTimeout(() => {
+        hideProgressModal();
+        showStatus('Todos os jogos do dia preenchidos!', 'success');
+      }, 2500);
+    }
+  });
   
   // Collapsible sections
   setupCollapsibleSections();
@@ -635,6 +693,7 @@ async function handleFill() {
       await chrome.tabs.update(tab.id, { url: expectedUrl });
       await waitForTabComplete(tab.id);
       await waitForVolante(tab.id);
+      await waitForAngularReady(tab.id);
       await executeDirectFill();
       return;
     }
@@ -645,6 +704,7 @@ async function handleFill() {
       await chrome.tabs.update(tab.id, { url: expectedUrl });
       await waitForTabComplete(tab.id);
       await waitForVolante(tab.id);
+      await waitForAngularReady(tab.id);
     }
 
     showProgress('Preenchendo números...', 0, parsedGames.length, '');
@@ -694,6 +754,41 @@ function waitForVolante(tabId, timeoutMs = 15000) {
         if (result > 0) { resolve(true); return; }
       } catch (_) { /* page may not be ready for scripting yet */ }
       setTimeout(poll, 300);
+    }
+    poll();
+  });
+}
+
+/**
+ * Polls the page until Angular scopes are bound to number elements.
+ * This ensures vm.selecionar() is available before we try to fill.
+ */
+function waitForAngularReady(tabId, timeoutMs = 10000) {
+  const start = Date.now();
+  return new Promise(resolve => {
+    async function poll() {
+      if (Date.now() - start > timeoutMs) {
+        console.warn('[Aposta Rápido] Timeout esperando Angular scope, continuando...');
+        resolve(false);
+        return;
+      }
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId },
+          world: 'MAIN',
+          func: () => {
+            if (typeof angular === 'undefined') return false;
+            const el = document.querySelector('ul.escolhe-numero a[id^="n"]');
+            if (!el) return false;
+            try {
+              const scope = angular.element(el).scope();
+              return !!(scope && scope.numero && scope.vm && typeof scope.vm.selecionar === 'function');
+            } catch (e) { return false; }
+          }
+        });
+        if (result) { resolve(true); return; }
+      } catch (_) {}
+      setTimeout(poll, 500);
     }
     poll();
   });
@@ -1621,8 +1716,11 @@ async function handleJogosDoDia() {
     return (usePerLottery && strategyMap[lottery]) || globalJddStrategy;
   }
   
-  showStatus(`Gerando jogos para ${selectedLotteries.length} loteria(s)...`, 'info');
-  showProgress('Gerando jogos...', 0, selectedLotteries.length, '');
+  // Reset JDD state and show modal
+  jddCancelled = false;
+  jddTotal = selectedLotteries.length;
+  jddDetailsHtml = '';
+  showProgressModal('Gerando jogos...', 0, selectedLotteries.length, '');
   
   // Armazenar todos os jogos gerados
   const jogosPorLoteria = {};
@@ -1631,16 +1729,17 @@ async function handleJogosDoDia() {
     // 1. Gerar todos os jogos primeiro
     let fetchedCount = 0;
     for (const lottery of selectedLotteries) {
+      if (jddCancelled) break;
+      
       const config = LOTTERY_CONFIG[lottery];
       const endpoint = mapLotteryToEndpoint(lottery);
       
-      showProgress('Gerando jogos...', fetchedCount, selectedLotteries.length,
-        `<div class="progress-step pending">⏳ ${config.name}...</div>`);
+      jddDetailsHtml += `<div class="progress-step pending" data-lottery="${lottery}">⏳ ${config.name}...</div>`;
+      showProgressModal('Gerando jogos...', fetchedCount, selectedLotteries.length, jddDetailsHtml);
       
       let url = `${apiUrl}/api/estatisticas/${endpoint}/gerar-jogos-estrategico?estrategia=${getStrategy(lottery)}&quantidade=${quantidade}`;
       
       if (config.min !== config.max) {
-        // Use slider value for the currently selected lottery, default for others
         const qtdNumeros = (lottery === currentLottery)
           ? (parseInt(quantidadeNumerosInput.value, 10) || config.min)
           : config.min;
@@ -1660,8 +1759,11 @@ async function handleJogosDoDia() {
       if (!data || !Array.isArray(data.jogos)) {
         console.warn(`[Aposta Rápido] Resposta inválida da API para ${config.name}`);
         fetchedCount++;
-        showProgress('Gerando jogos...', fetchedCount, selectedLotteries.length,
-          `<div class="progress-step error">${icon('x')} ${config.name}: resposta inválida</div>`);
+        jddDetailsHtml = jddDetailsHtml.replace(
+          new RegExp(`<div class="progress-step pending" data-lottery="${lottery}">.*?</div>`),
+          `<div class="progress-step error">${icon('x')} ${config.name}: resposta inválida</div>`
+        );
+        showProgressModal('Gerando jogos...', fetchedCount, selectedLotteries.length, jddDetailsHtml);
         continue;
       }
 
@@ -1676,27 +1778,32 @@ async function handleJogosDoDia() {
         };
       }
       fetchedCount++;
-      showProgress('Gerando jogos...', fetchedCount, selectedLotteries.length,
-        `<div class="progress-step success">${icon('check')} ${config.name}: ${data.jogos?.length || 0} jogo(s)</div>`);
+      jddDetailsHtml = jddDetailsHtml.replace(
+        new RegExp(`<div class="progress-step pending" data-lottery="${lottery}">.*?</div>`),
+        `<div class="progress-step success">${icon('check')} ${config.name}: ${data.jogos?.length || 0} jogo(s)</div>`
+      );
+      showProgressModal('Gerando jogos...', fetchedCount, selectedLotteries.length, jddDetailsHtml);
     }
+    
+    if (jddCancelled) return;
     
     const lotteriesKeys = Object.keys(jogosPorLoteria);
     if (lotteriesKeys.length === 0) {
-      hideProgress();
+      hideProgressModal();
       showStatus('Nenhum jogo gerado pela API', 'error');
       return;
     }
     
     // 2. Salvar fila de loterias a processar
+    jddTotal = lotteriesKeys.length;
+    jddDetailsHtml = '';
     await chrome.storage.local.set({ 
       jogosDoDiaFila: lotteriesKeys,
-      jogosDoDia: jogosPorLoteria
+      jogosDoDia: jogosPorLoteria,
+      jogosDoDiaTotal: lotteriesKeys.length
     });
     
-    showProgress('Abrindo páginas...', 0, lotteriesKeys.length,
-      `<div class="progress-step pending">${icon('rocket')} Preenchendo ${lotteriesKeys.length} loteria(s) em abas separadas...</div>`);
-    showStatus(`Jogos gerados! Abrindo ${lotteriesKeys.length} página(s) sequencialmente...`, 'success');
-    setTimeout(hideProgress, 10000);
+    showProgressModal('Abrindo páginas...', 0, lotteriesKeys.length, '');
     
     // 3. Iniciar processamento da primeira loteria
     chrome.runtime.sendMessage({
@@ -1705,7 +1812,7 @@ async function handleJogosDoDia() {
     
   } catch (error) {
     console.error('Erro ao gerar jogos do dia:', error);
-    hideProgress();
+    hideProgressModal();
     showStatus(`Erro: ${error.message}`, 'error');
   }
 }
@@ -1727,6 +1834,31 @@ function hideProgress() {
   progressSection.style.display = 'none';
   progressBarFill.style.width = '0%';
   progressDetails.innerHTML = '';
+}
+
+function showProgressModal(label, current, total, details) {
+  const modal = document.getElementById('progressModal');
+  const labelEl = document.getElementById('progressModalLabel');
+  const countEl = document.getElementById('progressModalCount');
+  const barFill = document.getElementById('progressModalBarFill');
+  const detailsEl = document.getElementById('progressModalDetails');
+  
+  if (!modal) return;
+  modal.style.display = 'flex';
+  if (labelEl) labelEl.textContent = label;
+  if (countEl) countEl.textContent = `${current}/${total}`;
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  if (barFill) barFill.style.width = `${pct}%`;
+  if (details && detailsEl) detailsEl.innerHTML = details;
+}
+
+function hideProgressModal() {
+  const modal = document.getElementById('progressModal');
+  if (modal) modal.style.display = 'none';
+  const barFill = document.getElementById('progressModalBarFill');
+  if (barFill) barFill.style.width = '0%';
+  const detailsEl = document.getElementById('progressModalDetails');
+  if (detailsEl) detailsEl.innerHTML = '';
 }
 
 function showConfirm(bodyHtml) {
