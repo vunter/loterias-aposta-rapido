@@ -343,14 +343,14 @@ async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
           let filled = 0;
           
           if (lotteryType === 'supersete') {
-            // Super Sete: column-based IDs n{column}{digit}
-            // Distribute numbers round-robin across 7 columns:
-            // numbers[0..6] → columns 1-7 (1st digit), numbers[7..13] → columns 1-7 (2nd digit), etc.
+            // Super Sete: sequential IDs n1..n70 in a 7-column grid
+            // Layout: row=digit(0-9), cols=1-7. Element ID = n(7*digit + column)
+            // numbers distributed round-robin across 7 columns
             const numColumns = 7;
             for (let i = 0; i < numbers.length; i++) {
               const column = (i % numColumns) + 1;
               const digit = numbers[i];
-              const elementId = `n${column}${digit}`;
+              const elementId = `n${7 * digit + column}`;
               const element = document.getElementById(elementId);
               
               if (element && typeof angular !== 'undefined') {

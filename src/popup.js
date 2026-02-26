@@ -1203,7 +1203,8 @@ async function executeDirectFill() {
         console.log(`[Aposta Rápido] preencherJogo #${gameIndex + 1} - gameData:`, JSON.stringify(gameData));
         console.log('[Aposta Rápido] preencherJogo - extra:', JSON.stringify(extra));
         
-        const numbersToFill = gameData.numbers || [];
+        // +Milionária stores dezenas separately; other lotteries use numbers
+        const numbersToFill = gameData.dezenas || gameData.numbers || [];
         const trevos = (gameData.trevos && gameData.trevos.length > 0) ? gameData.trevos : extra.trevosManual;
         
         console.log('[Aposta Rápido] numbersToFill:', numbersToFill);
@@ -1218,14 +1219,14 @@ async function executeDirectFill() {
         let filled = 0;
         
         if (extra.lottery === 'supersete') {
-          // Super Sete: column-based filling
-          // Distribute numbers round-robin across 7 columns:
-          // numbersToFill[0..6] → columns 1-7 (1st digit), [7..13] → columns 1-7 (2nd digit), etc.
+          // Super Sete: sequential IDs n1..n70 in a 7-column grid
+          // Layout: row=digit(0-9), cols=1-7. Element ID = n(7*digit + column)
+          // numbers distributed round-robin across 7 columns
           const numColumns = 7;
           for (let i = 0; i < numbersToFill.length; i++) {
             const column = (i % numColumns) + 1;
             const digit = numbersToFill[i];
-            const elementId = `n${column}${digit}`;
+            const elementId = `n${7 * digit + column}`;
             const element = document.getElementById(elementId);
             
             console.log(`[Aposta Rápido] Super Sete col ${column} digit ${digit}: ID '${elementId}' - Encontrado: ${!!element}`);
