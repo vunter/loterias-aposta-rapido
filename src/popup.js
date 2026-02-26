@@ -408,13 +408,14 @@ function updatePerLotteryStrategies() {
     const name = config?.name || key;
     return `<div class="jdd-lottery-strategy">
       <span>${name}</span>
-      <select data-lottery="${key}" onchange="saveState()">${optionsHtml}</select>
+      <select data-lottery="${key}">${optionsHtml}</select>
     </div>`;
   }).join('');
   
   // Restore previous selections or use global default
   container.querySelectorAll('select[data-lottery]').forEach(sel => {
     sel.value = existing[sel.dataset.lottery] || globalStrategy;
+    sel.addEventListener('change', saveState);
   });
 }
 
@@ -1000,7 +1001,7 @@ async function executeDirectFill() {
             // Encontrar o botão de aumentar trevos
             const botoesAumentar = document.querySelectorAll('a[ng-click*="modificarQtdNumerosApostaMaisMilionariaTrevo"]');
             console.log('[Aposta Rápido] Botões de aumentar trevo encontrados:', botoesAumentar.length);
-            const btnAumentarTrevo = botoesAumentar[0];
+            const btnAumentarTrevo = Array.from(botoesAumentar).find(btn => btn.textContent.trim() === '+');
             
             if (btnAumentarTrevo && typeof angular !== 'undefined') {
               const scope = angular.element(btnAumentarTrevo).scope();
@@ -1770,7 +1771,7 @@ async function handleJogosDoDia() {
       if (data.jogos.length > 0) {
         jogosPorLoteria[lottery] = {
           jogos: data.jogos,
-          quantidadeDezenas: data.quantidadeDezenas || data.jogos[0]?.length || config.min,
+          quantidadeDezenas: data.quantidadeDezenas || config.min,
           timeSugerido: data.timeSugerido || data.timesSugeridos?.[0] || '',
           mesSugerido: data.mesSugerido || data.mesesSugeridos?.[0] || '',
           timesSugeridos: data.timesSugeridos || (data.timeSugerido ? [data.timeSugerido] : []),

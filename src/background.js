@@ -40,12 +40,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tabId = tabs[0]?.id;
       if (tabId) {
-        chrome.tabs.update(tabId, { url: 'https://www.loteriasonline.caixa.gov.br' });
+        chrome.tabs.update(tabId, { url: 'https://www.loteriasonline.caixa.gov.br' }, () => sendResponse({ success: true }));
       } else {
-        chrome.tabs.create({ url: 'https://www.loteriasonline.caixa.gov.br' });
+        chrome.tabs.create({ url: 'https://www.loteriasonline.caixa.gov.br' }, () => sendResponse({ success: true }));
       }
     });
-    sendResponse({ success: true });
     return true;
   }
   
@@ -673,11 +672,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // Context menu
 if (chrome.contextMenus) {
   chrome.runtime.onInstalled.addListener(() => {
-    chrome.contextMenus.create({
-      id: 'aposta-rapido-fill',
-      title: 'Preencher com Aposta Rápido',
-      contexts: ['page'],
-      documentUrlPatterns: ['https://www.loteriasonline.caixa.gov.br/*', 'https://loteriasonline.caixa.gov.br/*']
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({
+        id: 'aposta-rapido-fill',
+        title: 'Preencher com Aposta Rápido',
+        contexts: ['page'],
+        documentUrlPatterns: ['https://www.loteriasonline.caixa.gov.br/*', 'https://loteriasonline.caixa.gov.br/*']
+      });
     });
   });
 
