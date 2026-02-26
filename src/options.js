@@ -87,7 +87,14 @@ function importAll(event) {
         throw new Error('Formato inválido');
       }
       // Only import known keys — ignore unknown entries
-      const ALLOWED_KEYS = new Set([...OPTION_KEYS, 'templates', 'savedGames']);
+      const ALLOWED_KEYS = new Set([
+        ...OPTION_KEYS, 'templates',
+        'lottery', 'numbersInput', 'quantidade', 'quantidadeNumeros', 'estrategia',
+        'quantidadeTrevos', 'trevosFixos', 'usarTimeFixo', 'timeCoracaoFixo',
+        'usarMesFixo', 'mesSorteFixo', 'jddLotteries', 'jddQuantidade',
+        'jddEstrategia', 'jddPerLotteryStrategy', 'jddLotteryStrategies',
+        'collapsedSections'
+      ]);
       const sanitized = {};
       for (const key of Object.keys(data)) {
         if (ALLOWED_KEYS.has(key)) {

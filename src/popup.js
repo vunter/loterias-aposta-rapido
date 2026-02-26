@@ -21,6 +21,25 @@ const LOTTERY_CONFIG = {
 
 const LOTTERY_BASE_URL = 'https://www.loteriasonline.caixa.gov.br/silce-web/#/';
 
+function updatePlaceholder() {
+  const config = LOTTERY_CONFIG[currentLottery];
+  if (!numbersInput) return;
+  switch (currentLottery) {
+    case 'supersete':
+      numbersInput.placeholder = 'Ex: 0, 5, 4, 7, 8, 2, 7\n3, 1, 9, 0, 6, 5, 2\nou: 0,5,4,7,8,2,7 ; 3,1,9,0,6,5,2';
+      break;
+    case 'maismilionaria':
+      numbersInput.placeholder = 'Ex: 03, 17, 25, 33, 41, 50, 2, 5\n(6+ dezenas de 01-50 + trevos de 1-6 no final)\nou selecione trevos fixos acima';
+      break;
+    case 'lotomania':
+      numbersInput.placeholder = 'Ex: 00, 05, 12, 18, 23, 31, 40, ... (50 números)\n(cole todos os 50 números de 00 a 99)';
+      break;
+    default:
+      numbersInput.placeholder = `Ex: ${Array.from({length: Math.min(config.min, 6)}, (_, i) => String(config.range[0] + i * Math.floor((config.range[1] - config.range[0]) / config.min)).padStart(2, '0')).join(', ')}\n(${config.min} números de ${String(config.range[0]).padStart(2, '0')} a ${String(config.range[1]).padStart(2, '0')})`;
+      break;
+  }
+}
+
 // Estado da aplicação
 let parsedGames = [];
 let currentLottery = 'megasena';
@@ -75,6 +94,7 @@ function init() {
   setupEventListeners();
   updateExtraOptions();
   updateQuantidadeNumerosRange();
+  updatePlaceholder();
   renderTemplates();
   
   // Templates
@@ -386,6 +406,7 @@ function handleLotteryChange() {
   currentLottery = lotterySelect.value;
   updateExtraOptions();
   updateQuantidadeNumerosRange();
+  updatePlaceholder();
   saveState();
   parsedGames = [];
   fillBtn.disabled = true;
@@ -772,26 +793,34 @@ async function executeDirectFill() {
         }
       }
       
-      function lerQuantidadeAtual() {
-        try {
-          const diminuirBtn = document.getElementById('diminuirnumero');
-          if (diminuirBtn && typeof angular !== 'undefined') {
-            const scope = angular.element(diminuirBtn).scope();
-            if (scope?.vm?.qtdNumerosAposta) return scope.vm.qtdNumerosAposta;
-          }
-          const qtdEl = document.querySelector('.numero-aposta span, [ng-bind*="qtdNumerosAposta"]');
-          if (qtdEl) {
-            const val = parseInt(qtdEl.textContent.trim(), 10);
-            if (!isNaN(val) && val > 0) return val;
-          }
-        } catch (e) {}
+      async function lerQuantidadeAtual() {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const diminuirBtn = document.getElementById('diminuirnumero');
+            if (diminuirBtn && typeof angular !== 'undefined') {
+              const scope = angular.element(diminuirBtn).scope();
+              if (scope?.vm?.qtdNumerosAposta) return scope.vm.qtdNumerosAposta;
+            }
+            const qtdEl = document.querySelector('.numero-aposta span, [ng-bind*="qtdNumerosAposta"]');
+            if (qtdEl) {
+              const val = parseInt(qtdEl.textContent.trim(), 10);
+              if (!isNaN(val) && val > 0) return val;
+            }
+          } catch (e) {}
+          if (attempt < 2) await sleep(200);
+        }
+        console.warn('[Aposta Rápido] Não foi possível ler quantidade atual de números');
         return null;
       }
 
       async function ajustarQuantidade(qtdDesejada) {
         try {
-          const qtdAtual = lerQuantidadeAtual();
-          if (qtdAtual === null || qtdAtual === qtdDesejada) return;
+          const qtdAtual = await lerQuantidadeAtual();
+          if (qtdAtual === null) {
+            console.warn('[Aposta Rápido] Não foi possível ajustar quantidade: quantidade atual desconhecida');
+            return;
+          }
+          if (qtdAtual === qtdDesejada) return;
 
           const aumentar = qtdDesejada > qtdAtual;
           const diff = Math.abs(qtdDesejada - qtdAtual);
@@ -1489,7 +1518,12 @@ async function handleFetchGames() {
     
     const data = await response.json();
     
-    if (data.jogos && data.jogos.length > 0) {
+    if (!data || !Array.isArray(data.jogos)) {
+      showStatus('Resposta inválida da API: formato inesperado', 'error');
+      return;
+    }
+
+    if (data.jogos.length > 0) {
       // Formatar jogos para o textarea
       const formattedGames = data.jogos.map(jogo => jogo.join(', ')).join('\n');
       numbersInput.value = formattedGames;
@@ -1606,11 +1640,16 @@ async function handleJogosDoDia() {
       let url = `${apiUrl}/api/estatisticas/${endpoint}/gerar-jogos-estrategico?estrategia=${getStrategy(lottery)}&quantidade=${quantidade}`;
       
       if (config.min !== config.max) {
-        url += `&quantidadeNumeros=${config.min}`;
+        // Use slider value for the currently selected lottery, default for others
+        const qtdNumeros = (lottery === currentLottery)
+          ? (parseInt(quantidadeNumerosInput.value, 10) || config.min)
+          : config.min;
+        url += `&quantidadeNumeros=${qtdNumeros}`;
       }
       
       if (lottery === 'maismilionaria') {
-        url += `&quantidadeTrevos=2`;
+        const qtdTrevos = parseInt(document.getElementById('quantidadeTrevos')?.value || '2', 10);
+        url += `&quantidadeTrevos=${qtdTrevos}`;
       }
       
       const response = await fetch(url);
@@ -1618,7 +1657,15 @@ async function handleJogosDoDia() {
       
       const data = await response.json();
       
-      if (data.jogos && data.jogos.length > 0) {
+      if (!data || !Array.isArray(data.jogos)) {
+        console.warn(`[Aposta Rápido] Resposta inválida da API para ${config.name}`);
+        fetchedCount++;
+        showProgress('Gerando jogos...', fetchedCount, selectedLotteries.length,
+          `<div class="progress-step error">${icon('x')} ${config.name}: resposta inválida</div>`);
+        continue;
+      }
+
+      if (data.jogos.length > 0) {
         jogosPorLoteria[lottery] = {
           jogos: data.jogos,
           quantidadeDezenas: data.quantidadeDezenas || data.jogos[0]?.length || config.min,
@@ -1902,6 +1949,15 @@ function getCurrentConfig() {
     timeCoracaoFixo: document.getElementById('timeCoracao')?.value || '',
     usarMesFixo: document.getElementById('usarMesFixo')?.checked || false,
     mesSorteFixo: document.getElementById('mesSorte')?.value || '',
+    jddEstrategia: document.getElementById('jddEstrategia')?.value || 'NUMEROS_PREMIADOS',
+    jddPerLotteryStrategy: document.getElementById('jddPerLotteryStrategy')?.checked || false,
+    jddLotteryStrategies: (() => {
+      const map = {};
+      document.querySelectorAll('#jddPerLotteryStrategies select[data-lottery]').forEach(sel => {
+        map[sel.dataset.lottery] = sel.value;
+      });
+      return map;
+    })(),
   };
 }
 
@@ -1955,6 +2011,27 @@ function applyTemplate(template) {
     if (el) el.value = template.mesSorteFixo;
   }
 
+  // Restore JDD strategy settings
+  if (template.jddEstrategia) {
+    const el = document.getElementById('jddEstrategia');
+    if (el) el.value = template.jddEstrategia;
+  }
+  if (template.jddPerLotteryStrategy !== undefined) {
+    const cb = document.getElementById('jddPerLotteryStrategy');
+    if (cb) {
+      cb.checked = template.jddPerLotteryStrategy;
+      togglePerLotteryStrategies();
+      if (template.jddLotteryStrategies) {
+        document.querySelectorAll('#jddPerLotteryStrategies select[data-lottery]').forEach(sel => {
+          if (template.jddLotteryStrategies[sel.dataset.lottery]) {
+            sel.value = template.jddLotteryStrategies[sel.dataset.lottery];
+          }
+        });
+      }
+    }
+  }
+
+  updatePlaceholder();
   saveState();
   showStatus('Template aplicado!', 'success');
 }

@@ -4,6 +4,10 @@ console.log('[Aposta Rápido] Background service worker iniciado');
 
 // URLs base
 const LOTTERY_BASE_URL = 'https://www.loteriasonline.caixa.gov.br/silce-web/#/';
+
+// B1: Retry counter for JDD processing (prevents infinite retry loop)
+let jddRetryCount = 0;
+const MAX_JDD_RETRIES = 3;
 const LOTTERY_URLS = {
   megasena: 'mega-sena',
   lotofacil: 'lotofacil',
@@ -117,10 +121,25 @@ async function processarProximaLoteria() {
     await waitForElement(tab.id, 'ul.escolhe-numero a[id^="n"]');
     
     await executeFillForTab(tab.id, lottery, jogosData, fila.length);
+    jddRetryCount = 0; // Reset on success
     
   } catch (error) {
     console.error('[Aposta Rápido] Erro ao processar loteria:', error);
-    setTimeout(() => processarProximaLoteria(), 1000);
+    jddRetryCount++;
+    if (jddRetryCount < MAX_JDD_RETRIES) {
+      console.log(`[Aposta Rápido] Tentativa ${jddRetryCount}/${MAX_JDD_RETRIES}, reagendando...`);
+      setTimeout(() => processarProximaLoteria(), 1000 * jddRetryCount);
+    } else {
+      console.error(`[Aposta Rápido] Máximo de ${MAX_JDD_RETRIES} tentativas atingido, pulando loteria.`);
+      jddRetryCount = 0;
+      // Skip to next lottery in queue
+      try {
+        const result = await chrome.storage.local.get(['jogosDoDiaFila']);
+        if (result.jogosDoDiaFila?.length > 0) {
+          setTimeout(() => processarProximaLoteria(), 1000);
+        }
+      } catch (_) {}
+    }
   }
 }
 
@@ -302,21 +321,29 @@ async function executeFillForTab(tabId, lottery, jogosData, remainingCount) {
           applyAngular();
         }
         
-        function lerQuantidadeAtual() {
-          try {
-            const diminuirBtn = document.getElementById('diminuirnumero');
-            if (diminuirBtn && typeof angular !== 'undefined') {
-              const scope = angular.element(diminuirBtn).scope();
-              if (scope?.vm?.qtdNumerosAposta) return scope.vm.qtdNumerosAposta;
-            }
-          } catch (e) {}
+        async function lerQuantidadeAtual() {
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              const diminuirBtn = document.getElementById('diminuirnumero');
+              if (diminuirBtn && typeof angular !== 'undefined') {
+                const scope = angular.element(diminuirBtn).scope();
+                if (scope?.vm?.qtdNumerosAposta) return scope.vm.qtdNumerosAposta;
+              }
+            } catch (e) {}
+            if (attempt < 2) await sleep(200);
+          }
+          console.warn('[Aposta Rápido] Não foi possível ler quantidade atual de números');
           return null;
         }
 
         async function ajustarQuantidade(qtdDesejada) {
           try {
-            const qtdAtual = lerQuantidadeAtual();
-            if (qtdAtual === null || qtdAtual === qtdDesejada) return;
+            const qtdAtual = await lerQuantidadeAtual();
+            if (qtdAtual === null) {
+              console.warn('[Aposta Rápido] Não foi possível ajustar quantidade: quantidade atual desconhecida');
+              return;
+            }
+            if (qtdAtual === qtdDesejada) return;
 
             const aumentar = qtdDesejada > qtdAtual;
             const diff = Math.abs(qtdDesejada - qtdAtual);
@@ -602,9 +629,19 @@ if (chrome.contextMenus) {
     });
   });
 
-  chrome.contextMenus.onClicked.addListener((info, tab) => {
+  chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId === 'aposta-rapido-fill') {
-      console.log('[Aposta Rápido] Context menu clicado');
+      try {
+        const result = await chrome.storage.local.get(['jogosDoDiaFila', 'jogosDoDia']);
+        if (result.jogosDoDiaFila && result.jogosDoDiaFila.length > 0) {
+          console.log('[Aposta Rápido] Context menu: retomando fila JDD');
+          processarProximaLoteria();
+        } else {
+          console.log('[Aposta Rápido] Context menu: nenhum jogo na fila');
+        }
+      } catch (e) {
+        console.error('[Aposta Rápido] Erro no context menu:', e);
+      }
     }
   });
 }
