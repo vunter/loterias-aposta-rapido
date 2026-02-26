@@ -105,6 +105,11 @@ textarea {
   color: #5a6a8a;
 }
 
+.extra-options {
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+  overflow: hidden;
+}
+
 .extra-options > div {
   margin-bottom: 16px;
   padding: 12px;
@@ -378,12 +383,16 @@ textarea {
   color: #00ff88;
 }
 
-#sectionTemplates {
-  border-color: rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.02);
+#sectionGerarJogos {
+  border-color: rgba(0, 212, 255, 0.2);
+  background: rgba(0, 212, 255, 0.03);
 }
 
-#sectionGerarJogos {
+#sectionGerarJogos .collapsible-header h3 {
+  color: #00d4ff;
+}
+
+#sectionTemplates {
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.02);
 }
@@ -765,6 +774,28 @@ footer p {
 .progress-details .progress-step.success { color: #00ff88; }
 .progress-details .progress-step.error { color: #ff5252; }
 .progress-details .progress-step.pending { color: #5a6a8a; }
+.progress-details .progress-step.active {
+  color: #ffb347;
+  font-weight: 600;
+  background: rgba(255, 179, 71, 0.1);
+  border-radius: 4px;
+  padding: 3px 6px;
+  animation: activePulse 1.5s ease-in-out infinite;
+}
+@keyframes activePulse {
+  0%, 100% { background: rgba(255, 179, 71, 0.08); }
+  50% { background: rgba(255, 179, 71, 0.18); }
+}
+
+.progress-remaining {
+  margin-top: 8px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  color: #8892b0;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  border-left: 2px solid rgba(0, 212, 255, 0.4);
+}
 
 /* Confirm dialog overlay */
 .confirm-overlay {

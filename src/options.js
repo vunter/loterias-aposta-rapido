@@ -117,10 +117,10 @@ function importAll(event) {
 }
 
 function resetOptions() {
-  if (!confirm('Restaurar todas as configurações para os valores padrão? Isto apagará todas as preferências salvas.')) {
+  if (!confirm('Restaurar todas as configurações para os valores padrão? Templates e jogos salvos serão preservados.')) {
     return;
   }
-  chrome.storage.local.clear(() => {
+  chrome.storage.local.remove(OPTION_KEYS, () => {
     chrome.storage.local.set(DEFAULT_OPTIONS, () => {
       loadOptions();
       showStatus('Configurações restauradas para os padrões!', 'info');
@@ -136,3 +136,7 @@ function showStatus(message, type) {
     setTimeout(() => { statusSection.style.display = 'none'; }, 4000);
   }
 }
+
+// Dynamic copyright year
+const yearEl = document.getElementById('optionsYear');
+if (yearEl) yearEl.textContent = new Date().getFullYear();
