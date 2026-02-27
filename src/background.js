@@ -148,12 +148,7 @@ async function processarProximaLoteria() {
         if (result.jogosDoDiaFila?.length > 0) {
           setTimeout(() => processarProximaLoteria(), 1000);
         }
-      } catch (_) {}
-    }
-  }
-}
-
-function waitForTabLoad(tabId) {
+      } catch (e) { console.debug('[Aposta Rápido] Queue check error:', e.message); }function waitForTabLoad(tabId) {
   return new Promise((resolve) => {
     const listener = (updatedTabId, changeInfo) => {
       if (updatedTabId === tabId && changeInfo.status === 'complete') {
@@ -225,15 +220,14 @@ function waitForAngularReady(tabId, timeoutMs = 10000) {
           }
         });
         if (result) { resolve(true); return; }
-      } catch (_) {}
-      setTimeout(poll, 500);
+      } catch (e) { console.debug('[Aposta Rápido] Poll error:', e.message); }
     }
     poll();
   });
 }
 
 function sendJddMessage(msg) {
-  try { chrome.runtime.sendMessage(msg); } catch (_) {}
+  try { chrome.runtime.sendMessage(msg); } catch (e) { console.debug('[Aposta Rápido] sendJddMessage error:', e.message); }
 }
 
 async function executeFillForTab(tabId, lottery, jogosData, remainingCount, jddTabDelay) {

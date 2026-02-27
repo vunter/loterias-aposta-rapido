@@ -141,13 +141,13 @@ function init() {
   // Listen for JDD progress from background
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'jddFilling') {
-      const name = LOTTERY_CONFIG[request.lottery]?.name || request.lottery;
+      const name = escapeHtml(LOTTERY_CONFIG[request.lottery]?.name || request.lottery);
       const gamesLabel = request.totalGames ? ` (0/${request.totalGames})` : '';
-      jddDetailsHtml += `<div class="progress-step active" data-lottery="${request.lottery}">⏳ ${name}${gamesLabel}</div>`;
+      jddDetailsHtml += `<div class="progress-step active" data-lottery="${escapeHtml(request.lottery)}">⏳ ${name}${gamesLabel}</div>`;
       // Show remaining lotteries summary
       if (request.remainingSummary && Object.keys(request.remainingSummary).length > 0) {
         const remainingItems = Object.entries(request.remainingSummary)
-          .map(([key, count]) => `${LOTTERY_CONFIG[key]?.name || key}: ${count} jogo${count > 1 ? 's' : ''}`)
+          .map(([key, count]) => `${escapeHtml(LOTTERY_CONFIG[key]?.name || key)}: ${count} jogo${count > 1 ? 's' : ''}`)
           .join(' · ');
         jddDetailsHtml = jddDetailsHtml.replace(/<div class="progress-remaining">.*?<\/div>/, '');
         jddDetailsHtml += `<div class="progress-remaining">Próximas: ${remainingItems}</div>`;
@@ -159,23 +159,25 @@ function init() {
     }
     if (request.action === 'jddGameProgress') {
       // Per-game progress within current lottery
-      const name = LOTTERY_CONFIG[request.lottery]?.name || request.lottery;
+      const name = escapeHtml(LOTTERY_CONFIG[request.lottery]?.name || request.lottery);
+      const lotteryKey = escapeHtml(request.lottery);
       const activeRegex = new RegExp(
-        `<div class="progress-step active" data-lottery="${request.lottery}">.*?</div>`
+        `<div class="progress-step active" data-lottery="${lotteryKey}">.*?</div>`
       );
       jddDetailsHtml = jddDetailsHtml.replace(
         activeRegex,
-        `<div class="progress-step active" data-lottery="${request.lottery}">⏳ ${name} (${request.current}/${request.total})</div>`
+        `<div class="progress-step active" data-lottery="${lotteryKey}">⏳ ${name} (${request.current}/${request.total})</div>`
       );
       showProgressModal('Preenchendo jogos...', null, null, jddDetailsHtml);
     }
     if (request.action === 'jddFilled') {
-      const name = LOTTERY_CONFIG[request.lottery]?.name || request.lottery;
+      const name = escapeHtml(LOTTERY_CONFIG[request.lottery]?.name || request.lottery);
+      const lotteryKey = escapeHtml(request.lottery);
       const stepIcon = request.success ? icon('check') : icon('x');
       const cls = request.success ? 'success' : 'error';
       const gamesInfo = request.totalGames ? ` — ${request.gamesAdded || 0}/${request.totalGames}` : '';
       const activeRegex = new RegExp(
-        `<div class="progress-step active" data-lottery="${request.lottery}">.*?</div>`
+        `<div class="progress-step active" data-lottery="${lotteryKey}">.*?</div>`
       );
       jddDetailsHtml = jddDetailsHtml.replace(
         activeRegex,
@@ -863,7 +865,7 @@ function waitForAngularReady(tabId, timeoutMs = 10000) {
           }
         });
         if (result) { resolve(true); return; }
-      } catch (_) {}
+      } catch (e) { console.debug('[Aposta Rápido] Element poll error:', e.message); }
       setTimeout(poll, 500);
     }
     poll();
@@ -1699,6 +1701,13 @@ async function handleFetchGames() {
       return;
     }
 
+    // Validate each game has numbers
+    const validJogos = data.jogos.filter(jogo => Array.isArray(jogo) && jogo.length > 0);
+    if (validJogos.length !== data.jogos.length) {
+      console.warn(`[Aposta Rápido] ${data.jogos.length - validJogos.length} jogo(s) com formato inválido filtrados`);
+      data.jogos = validJogos;
+    }
+
     if (data.jogos.length > 0) {
       // Formatar jogos para o textarea
       const formattedGames = data.jogos.map(jogo => jogo.join(', ')).join('\n');
@@ -1820,7 +1829,7 @@ async function handleJogosDoDia() {
       const config = LOTTERY_CONFIG[lottery];
       const endpoint = mapLotteryToEndpoint(lottery);
       
-      jddDetailsHtml += `<div class="progress-step active" data-lottery="${lottery}">⏳ ${config.name}...</div>`;
+      jddDetailsHtml += `<div class="progress-step active" data-lottery="${escapeHtml(lottery)}">⏳ ${escapeHtml(config.name)}...</div>`;
       showProgressModal('Gerando jogos...', fetchedCount, selectedLotteries.length, jddDetailsHtml);
       
       let url = `${apiUrl}/api/estatisticas/${endpoint}/gerar-jogos-estrategico?estrategia=${getStrategy(lottery)}&quantidade=${quantidade}`;
@@ -1846,8 +1855,8 @@ async function handleJogosDoDia() {
         console.warn(`[Aposta Rápido] Resposta inválida da API para ${config.name}`);
         fetchedCount++;
         jddDetailsHtml = jddDetailsHtml.replace(
-          new RegExp(`<div class="progress-step active" data-lottery="${lottery}">.*?</div>`),
-          `<div class="progress-step error">${icon('x')} ${config.name}: resposta inválida</div>`
+          new RegExp(`<div class="progress-step active" data-lottery="${escapeHtml(lottery)}">.*?</div>`),
+          `<div class="progress-step error">${icon('x')} ${escapeHtml(config.name)}: resposta inválida</div>`
         );
         showProgressModal('Gerando jogos...', fetchedCount, selectedLotteries.length, jddDetailsHtml);
         continue;
@@ -1865,8 +1874,8 @@ async function handleJogosDoDia() {
       }
       fetchedCount++;
       jddDetailsHtml = jddDetailsHtml.replace(
-        new RegExp(`<div class="progress-step active" data-lottery="${lottery}">.*?</div>`),
-        `<div class="progress-step success">${icon('check')} ${config.name}: ${data.jogos?.length || 0} jogo(s)</div>`
+        new RegExp(`<div class="progress-step active" data-lottery="${escapeHtml(lottery)}">.*?</div>`),
+        `<div class="progress-step success">${icon('check')} ${escapeHtml(config.name)}: ${data.jogos?.length || 0} jogo(s)</div>`
       );
       showProgressModal('Gerando jogos...', fetchedCount, selectedLotteries.length, jddDetailsHtml);
     }
